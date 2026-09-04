@@ -1,7 +1,7 @@
 # ✈️ Travora
 
 **Travora** is a LangGraph-based multi-agent travel planner that transforms a natural-language travel request into a complete trip plan including flight information, hotel research, and a day-by-day itinerary.
-
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Render-46E3B7?logo=render&logoColor=white)](https://travora-ai-travel-agent.onrender.com)
 ---
 
 ## Overview
