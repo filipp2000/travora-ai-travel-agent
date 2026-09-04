@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Travora</title>
+
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+    <div class="background-effects" aria-hidden="true">
+        <div class="background-grid"></div>
+        <div class="glow glow-left"></div>
+        <div class="glow glow-right"></div>
+    </div>
+
+    <main class="app-shell">
+
+        <!-- Hero -->
+        <section class="hero-section">
+            <div class="eyebrow">
+                <span class="eyebrow-icon">✦</span>
+                Travora — A Multi-Agent Travel Planner
+            </div>
+
+            <h1>
+                Travel planning,
+                <span>powered by AI.</span>
+            </h1>
+
+            <p class="hero-description">
+                Search flights, discover hotels and build a complete itinerary
+                through a coordinated multi-agent workflow.
+            </p>
+
+            <div class="feature-row">
+                <span>✈ Flight Search</span>
+                <span>⌂ Hotel Research</span>
+                <span>◎ Smart Itinerary</span>
+            </div>
+        </section>
+
+        <!-- Main planner -->
+        <section class="planner-card">
+
+            <div class="planner-header">
+                <div>
+                    <p class="section-label">CREATE YOUR TRIP</p>
+                    <h2>Where are you going?</h2>
+                    <p class="section-description">
+                        Describe your destination, duration, origin and budget.
+                    </p>
+                </div>
+
+                <div class="status-pill">
+                    <span class="status-dot"></span>
+                    Online
+                </div>
+            </div>
+
+            <div class="prompt-wrapper">
+
+                <textarea
+                    id="userInput"
+                    placeholder="Example: Plan a 5 day trip to Italy from Greece including flights, hotels and sightseeing under €1500..."
+                ></textarea>
+
+                <div class="prompt-footer">
+                    <span class="shortcut-hint">
+                        Ctrl + Enter to generate
+                    </span>
+
+                    <button id="sendBtn" onclick="sendMessage()">
+                        <span id="btnText">
+                            Generate trip
+                            <span class="button-arrow">→</span>
+                        </span>
+
+                        <span id="btnLoader" class="loader hidden"></span>
+                    </button>
+                </div>
+
+            </div>
+
+            <div class="quick-prompts-wrapper">
+                <span class="quick-label">Try an example</span>
+
+                <div class="quick-prompts">
+
+                    <button onclick="setPrompt(
+                        'Plan a complete 5 days trip to Italy from Greece including flights, hotels and sightseeing under 1500€.'
+                    )">
+                        🇮🇹 Italy
+                    </button>
+
+                    <button onclick="setPrompt(
+                        'Plan a complete 7 days Japan trip from Greece including flights, hotels and sightseeing.'
+                    )">
+                        🇯🇵 Japan
+                    </button>
+
+                    <button onclick="setPrompt(
+                        'Plan a 7 days Thailand trip from Greece with budget hotels and sightseeing.'
+                    )">
+                        🇹🇭 Thailand
+                    </button>
+
+                    <button onclick="setPrompt(
+                        'Give me all country flight info.'
+                    )">
+                        🌍 Global flights
+                    </button>
+
+                </div>
+            </div>
+
+        </section>
+
+
+        <!-- Error -->
+        <section id="errorBox" class="error-box hidden"></section>
+
+
+        <!-- Result -->
+        <section id="resultSection" class="result-section hidden">
+
+            <div class="result-header">
+
+                <div>
+                    <p class="section-label">YOUR TRAVEL PLAN</p>
+                    <h2>Your personalized itinerary</h2>
+                    <p id="threadInfo" class="thread-info">
+                        Thread ID: -
+                    </p>
+                </div>
+
+                <div class="result-actions">
+
+                    <button class="copy-btn" onclick="copyResult()">
+                        Copy
+                    </button>
+
+                    <button class="download-btn" onclick="downloadPDF()">
+                        Download PDF
+                    </button>
+
+                </div>
+
+            </div>
+
+            <div id="pdfContent" class="pdf-content">
+                <h1 class="pdf-title">Travora AI Travel Plan</h1>
+
+                <div id="resultBox" class="result-box"></div>
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <footer>
+        <span>Travora</span>
+        <span class="footer-divider">•</span>
+        Built with LangGraph, FastAPI and Groq
+    </footer>
+
+
+    <!-- Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- Client-side PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <script src="/static/script.js"></script>
+
+</body>
+</html>
