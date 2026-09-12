@@ -1,5 +1,17 @@
-let currentThreadId = localStorage.getItem("travel_thread_id") || null;
+// A thread is persisted only while LangGraph is
+// waiting for clarification from the user.
+let pendingThreadId =
+    localStorage.getItem(
+        "pending_travel_thread_id"
+    ) || null;
+
 let latestAnswerMarkdown = "";
+
+// Clean up the legacy behavior where every request
+// reused the last completed thread.
+localStorage.removeItem(
+    "travel_thread_id"
+);
 
 function setPrompt(text) {
     document.getElementById("userInput").value = text;
@@ -58,48 +70,109 @@ function showResult(answer, threadId) {
     });
 }
 
+
 async function sendMessage() {
     hideError();
 
-    const input = document.getElementById("userInput");
-    const message = input.value.trim();
+    const input =
+        document.getElementById(
+            "userInput"
+        );
+
+    const message =
+        input.value.trim();
 
     if (!message) {
-        showError("Please enter your travel request first.");
+        showError(
+            "Please enter your travel request first."
+        );
         return;
     }
 
     setLoading(true);
 
     try {
-        const response = await fetch("/api/travel", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                message: message,
-                thread_id: currentThreadId
-            })
-        });
+        const response = await fetch(
+            "/api/travel",
+            {
+                method: "POST",
 
-        const data = await response.json();
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
 
-        if (!response.ok || !data.success) {
-            throw new Error(data.error || "Something went wrong.");
+                body: JSON.stringify({
+                    message: message,
+
+                    // Only interrupted workflows reuse
+                    // an existing LangGraph thread.
+                    thread_id:
+                        pendingThreadId
+                })
+            }
+        );
+
+        const data =
+            await response.json();
+
+        if (
+            !response.ok
+            || !data.success
+        ) {
+            throw new Error(
+                data.error
+                || "Something went wrong."
+            );
         }
 
-        currentThreadId = data.thread_id;
-        localStorage.setItem("travel_thread_id", currentThreadId);
+        // ---------------------------------------------
+        // Workflow paused for clarification.
+        // Preserve the thread for the next user reply.
+        // ---------------------------------------------
+        if (
+            data.status
+            === "requires_input"
+        ) {
+            pendingThreadId =
+                data.thread_id;
 
-        showResult(data.answer, data.thread_id);
+            localStorage.setItem(
+                "pending_travel_thread_id",
+                pendingThreadId
+            );
+        }
+
+        // ---------------------------------------------
+        // Workflow finished.
+        // The next request starts a new trip thread.
+        // ---------------------------------------------
+        else if (
+            data.status
+            === "completed"
+        ) {
+            pendingThreadId = null;
+
+            localStorage.removeItem(
+                "pending_travel_thread_id"
+            );
+        }
+
+        showResult(
+            data.answer,
+            data.thread_id
+        );
 
     } catch (error) {
-        showError(error.message);
+        showError(
+            error.message
+        );
+
     } finally {
         setLoading(false);
     }
 }
+
 
 function copyResult() {
     const resultBox = document.getElementById("resultBox");

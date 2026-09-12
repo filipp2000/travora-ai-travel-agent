@@ -81,12 +81,15 @@ async def travel_planner(request_data: TravelRequest):
         return JSONResponse(
             content={
                 "success": True,
+                # Used by the frontend to decide whether the
+                # thread must be preserved for clarification.
+                "status": result["status"],
                 "thread_id": result["thread_id"],
                 "answer": result["answer"],
-                "flight_results": result["flight_results"],
-                "hotel_results": result["hotel_results"],
-                "itinerary": result["itinerary"],
-                "llm_calls": result["llm_calls"],
+                "flight_results": result.get("flight_results", ""),
+                "hotel_results": result.get("hotel_results", ""),
+                "activity_results": result.get("activity_results", ""),
+                "itinerary": result.get("itinerary", ""),
             }
         )
 
