@@ -324,11 +324,106 @@ Arrival:
 """.strip()
 
 
+def search_flights_by_route(
+    departure_iata: str | None,
+    arrival_iata: str | None,
+    limit: int = 10,
+) -> str:
+    if not API_KEY:
+        return (
+            "Flight API error: AVIATIONSTACK_API_KEY is missing."
+        )
+
+    if limit < 1:
+        return "Flight search error: limit must be greater than zero."
+
+    limit = min(limit, 100)
+
+    params = {
+        "access_key": API_KEY,
+        "limit": limit,
+    }
+
+    if departure_iata:
+        params["dep_iata"] = departure_iata
+
+    if arrival_iata:
+        params["arr_iata"] = arrival_iata
+
+    try:
+        response = requests.get(
+            BASE_URL,
+            params=params,
+            timeout=30,
+        )
+
+        response.raise_for_status()
+        data = response.json()
+
+    except requests.exceptions.RequestException as exc:
+        return f"Flight API request failed: {exc}"
+
+    except ValueError:
+        return "Flight API returned invalid JSON."
+
+    if "error" in data:
+        error = data["error"]
+
+        return (
+            "Flight API error:\n"
+            f"Code: {error.get('code', 'Unknown')}\n"
+            f"Message: {error.get('message', 'Unknown error')}"
+        )
+
+    flight_data = data.get("data", [])
+
+    if not flight_data:
+        route_text = ""
+
+        if departure_iata and arrival_iata:
+            route_text = (
+                f" for route {departure_iata} "
+                f"to {arrival_iata}"
+            )
+        elif departure_iata:
+            route_text = f" from {departure_iata}"
+        elif arrival_iata:
+            route_text = f" to {arrival_iata}"
+
+        return (
+            f"No live flight data found{route_text}.\n\n"
+            "Note: AviationStack provides live/status flight data, "
+            "not ticket prices."
+        )
+
+    if departure_iata and arrival_iata:
+        route_info = (
+            f"Live flights from {departure_iata} "
+            f"to {arrival_iata}"
+        )
+    elif departure_iata:
+        route_info = f"Live flights from {departure_iata}"
+    elif arrival_iata:
+        route_info = f"Live flights to {arrival_iata}"
+    else:
+        route_info = "Global live flights"
+
+    formatted_flights = [
+        format_flight(flight)
+        for flight in flight_data[:limit]
+    ]
+
+    return (
+        f"{route_info}\n\n"
+        + "\n\n---\n\n".join(formatted_flights)
+    )
+
 def search_flights(
     query: str,
     limit: int = 10,
 ) -> str:
     """
+    LEGACY search func
     Search AviationStack for live flight data.
 
     This function still accepts raw user text
