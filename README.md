@@ -1,38 +1,24 @@
 # ✈️ Travora
 
-**Travora** is a LangGraph-based AI travel planner that transforms natural-language travel requests into structured travel plans using capability-based routing, deterministic validation, external travel services, and LLM-powered generation.
+**Travora** is a LangGraph-based AI travel planner that transforms natural-language travel requests into grounded travel plans using structured request understanding, deterministic validation, capability-based routing, external travel services, and single-pass LLM response generation.
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Render-46E3B7?logo=render&logoColor=white)](https://travora-ai-travel-agent.onrender.com)
 
 ## Overview
 
-A user can submit requests such as:
+Travora supports both complete trip-planning requests and focused travel requests.
 
-> Plan a 7-day trip to Japan from Greece including flights, hotels and sightseeing under 3000$.
+Examples:
 
-or more focused requests such as:
+> Plan a 5-day complete trip to France from Athens under $2000.
 
 > Find budget hotels in Milan under $120 per night.
 
-Travora first converts the natural-language request into a structured travel request. It then applies deterministic business rules, validates required information, and routes execution only to the capabilities required by that request.
+> What are the best things to do in Rome?
 
-```text
-User Request
-    ↓
-Structured Request Understanding
-    ↓
-Deterministic Request Policy
-    ↓
-Request Validation
-    ↓
-Capability Routing
-    ├── Flights
-    ├── Hotels
-    ├── Activities
-    └── Itinerary
-    ↓
-Final Response
-```
+Travora converts the user's request into a typed `TravelRequest`, applies deterministic product rules, validates the information required for execution, and runs only the capabilities needed for that request.
+
+Independent flight, hotel, and activity lookups can run in parallel. Their results are synchronized and passed to a **single response-generation step**, avoiding repeated LLM synthesis.
 
 If required information is missing or cannot be resolved, the workflow pauses using a LangGraph interrupt and resumes after the user provides clarification.
 
@@ -40,23 +26,23 @@ If required information is missing or cannot be resolved, the workflow pauses us
 
 ## Features
 
-- 🧠 Structured natural-language request understanding with Pydantic models
-- 🧭 Capability-based LangGraph routing
+- 🧠 Structured natural-language request understanding with Pydantic
 - ✅ Deterministic request policy and validation
+- 🧭 Capability-based LangGraph routing
 - ✈️ Flight information using AviationStack
 - 🏨 Hotel research using Tavily
 - 🗺️ Destination and activity research using Tavily
-- 🤖 LLM-powered itinerary generation using Groq
 - 🔀 Conditional execution of only the required travel capabilities
-- ⚡ Parallel execution of independent research nodes when applicable
+- ⚡ Parallel execution of independent research nodes
+- 🤖 Single-pass LLM synthesis for the final travel response
 - 💬 Human-in-the-loop clarification using LangGraph interrupts
 - 💾 PostgreSQL-backed LangGraph checkpoint persistence
-- 🔁 Interrupt/resume workflow support through `thread_id`
+- 🔁 Interrupt/resume support through `thread_id`
+- 🔍 LangSmith tracing for workflow inspection and observability
 - 🌐 FastAPI backend
 - 🎨 Responsive browser-based frontend
 - 📋 Copy generated travel plans
 - 📄 Export travel plans as PDF
-- 🔍 LangSmith tracing for workflow inspection and observability
 
 ---
 
@@ -75,7 +61,7 @@ If required information is missing or cannot be resolved, the workflow pauses us
 
 - Tavily Search API
 - AviationStack API
-- PostgreSQL
+- Neon PostgreSQL
 - LangSmith
 
 ### Frontend
@@ -95,68 +81,82 @@ If required information is missing or cannot be resolved, the workflow pauses us
 
 ---
 
+
+## Observability
+
+Travora uses LangSmith to inspect workflow execution and LLM behavior.
+
+Tracing is useful for reviewing:
+
+- executed graph paths
+- LLM inputs and outputs
+- token usage
+- latency
+- failures
+- routing behavior
+
+---
+
 ## Architecture
 
-Travora uses a capability-oriented LangGraph workflow.
+Travora uses a **capability-oriented workflow**, not a fixed linear agent pipeline.
 
 ```mermaid
 flowchart LR
     U[Frontend] --> API[FastAPI]
     API --> G[LangGraph Workflow]
 
-    G --> UR[Understand Request]
-    UR --> RP[Request Policy]
-    RP --> V[Validate Request]
+    G --> UR[Understand Request<br/>+ Request Policy]
+    UR --> V[Validate Request]
 
     V -->|Needs clarification| C[Interrupt / Clarification]
-    C -->|Resume + revalidate| R{Route by Capability}
+    C -->|Resume| V
 
-    V -->|Ready| R
+    V -->|Ready| R{Route by Capability}
 
     R -->|Flights| F[Flight Node]
     R -->|Hotels| H[Hotel Node]
     R -->|Activities| A[Activities Node]
-    R -->|Itinerary only| I[Itinerary Node]
+    R -->|No external research| GR[Generate Response]
 
     F --> AV[AviationStack]
     H --> T[Tavily]
     A --> T
 
-    F --> J[Join Services]
+    F --> J[Research Barrier]
     H --> J
     A --> J
 
-    J -->|Itinerary requested| I
-    J -->|No itinerary required| FR[Final Response]
-
-    I --> FR
+    J --> GR
+    GR --> E[END]
 
     UR --> L[Groq LLM]
-    I --> L
-    FR --> L
+    GR --> L
 
-    G -. Checkpoints / Resume .-> DB[(PostgreSQL)]
+    G -. Checkpoints / Resume .-> DB[(Neon PostgreSQL)]
 ```
 
-The workflow separates probabilistic LLM reasoning from deterministic application logic:
+The workflow separates probabilistic LLM work from deterministic application logic:
 
 ```text
 Natural-language request
         ↓
-LLM structured extraction
-        ↓
-TravelRequest
+Structured LLM extraction
         ↓
 Deterministic request policy
         ↓
 Deterministic validation
         ↓
-Conditional LangGraph routing
+Capability routing
         ↓
-External services / LLM generation
+External research when required
+        ↓
+Single LLM response synthesis
 ```
 
-This prevents external APIs from being called simply because they exist in the graph. A hotel-only request, for example, does not execute the flight integration.
+A hotel-only request does not execute flight research. A flight-only request does not execute hotel research. An itinerary-only request can go directly to response generation without unnecessary external API calls.
+
+`ITINERARY` remains a domain capability, but it is treated as an **output requirement**, not as a separate LLM generation stage.
 
 ---
 
@@ -164,9 +164,9 @@ This prevents external APIs from being called simply because they exist in the g
 
 ### Understand Request
 
-The request-understanding node uses Groq structured output to convert the user's natural-language request into a typed `TravelRequest`.
+The request-understanding node converts the user's natural-language request into a typed `TravelRequest` using Groq structured output.
 
-The model extracts information such as:
+It extracts information such as:
 
 - requested capabilities
 - origin
@@ -176,15 +176,15 @@ The model extracts information such as:
 - number of travelers
 - travel preferences
 
-The LLM does not resolve airport codes or validate locations.
+The LLM does not resolve airport codes or decide whether a location is valid.
 
 ---
 
 ### Request Policy
 
-After LLM extraction, deterministic business rules normalize the request.
+After LLM extraction, deterministic application rules normalize the request before validation.
 
-For example, an end-to-end planning request containing both an origin and destination requires:
+For the current Travora product scope, an end-to-end trip-planning request with both an origin and destination requires:
 
 ```text
 FLIGHTS
@@ -192,41 +192,87 @@ HOTELS
 ITINERARY
 ```
 
-This provides a deterministic safety layer instead of relying entirely on probabilistic LLM classification.
+This prevents important routing behavior from depending entirely on probabilistic LLM classification.
 
 ---
 
 ### Request Validation
 
-The validation layer checks whether enough information exists to safely execute the requested capabilities.
+Validation is deterministic.
 
-Flight requests require resolvable origin and destination locations.
+For flight requests, Travora verifies that both origin and destination can be resolved into usable IATA airport codes.
 
-Location resolution is deterministic and supports:
+Location resolution supports:
 
 - IATA codes
 - cities
 - countries
 
-If a location such as `"my city"` cannot be resolved, the request is marked as requiring clarification rather than silently guessing a departure airport.
+If the user provides an unresolved location such as `"my city"`, Travora does not guess. The workflow pauses and asks for clarification.
+
+---
+
+### Clarification / Interrupt
+
+When required information is missing or unresolved, LangGraph pauses the workflow using `interrupt()`.
+
+Example:
+
+```text
+User:
+Plan a 5 day trip to Japan from my city.
+
+Travora:
+What city, country, or airport will you be departing from?
+
+User:
+Athens
+```
+
+The clarification answer resumes the same checkpointed workflow and then passes through the normal validation path again before routing continues.
+
+---
+
+### Capability Routing
+
+After validation, Travora deterministically selects only the external capabilities required by the request.
+
+```text
+Hotel-only
+→ Hotel Node
+
+Flight-only
+→ Flight Node
+
+Activities-only
+→ Activities Node
+
+Complete trip
+→ Flight Node + Hotel Node
+
+Complete trip with sightseeing
+→ Flight Node + Hotel Node + Activities Node
+```
+
+The `ITINERARY` capability does not require its own graph node. Instead, it tells the response generator to include a day-by-day itinerary.
 
 ---
 
 ### Flight Node
 
-The flight node receives validated IATA airport codes and queries AviationStack directly.
+The flight node consumes validated IATA airport codes and queries AviationStack.
 
 ```text
 TravelRequest
     ↓
-Location Resolution
+Deterministic location resolution
     ↓
-ATH → NRT
+ATH → CDG
     ↓
 AviationStack
 ```
 
-Natural-language route parsing is not performed inside the active flight workflow.
+The active workflow does not re-parse the user's raw natural-language request inside the flight node.
 
 AviationStack currently provides flight/status information rather than live airfare pricing.
 
@@ -234,9 +280,9 @@ AviationStack currently provides flight/status information rather than live airf
 
 ### Hotel Node
 
-The hotel node constructs a search query from the structured request and retrieves hotel-related web results through Tavily.
+The hotel node builds a search query from the structured request and retrieves hotel-related results through Tavily.
 
-Budget and preference information can be incorporated into the search query when available.
+Relevant request information such as destination, budget, and preferences can be incorporated into the search.
 
 ---
 
@@ -246,35 +292,49 @@ The activities node retrieves sightseeing, attractions, and destination informat
 
 ---
 
-### Join Services
+### Research Barrier
 
 Flight, hotel, and activity retrieval can execute independently.
 
-The `join_services` node acts as a synchronization point before the workflow continues to itinerary generation or the final response.
+The `join_services` node acts as a synchronization barrier before response generation. It does not perform an LLM call.
 
 ---
 
-### Itinerary Node
+### Generate Response
 
-The itinerary node uses the structured travel request together with available flight, hotel, and activity research to generate a practical day-by-day plan using Groq.
+`generate_response_node` is the workflow's single synthesis step.
+
+It receives the structured request and any available flight, hotel, and activity research, then generates only the sections relevant to the requested capabilities.
+
+If `ITINERARY` is requested, the same generation step creates the day-by-day itinerary. Travora therefore avoids generating an itinerary and then sending that generated text into another LLM call for rewriting.
+
+The response rules instruct the model not to fabricate live prices, availability, flight numbers, provider data, hotel details, or URLs that are not supported by the available research.
 
 ---
 
-### Final Response Node
+## LLM Usage
 
-The final response node creates the user-facing answer from the capabilities and results relevant to the current request.
+The main workflow has two distinct LLM responsibilities:
 
-A hotel-only request therefore produces a hotel-focused answer rather than forcing flight or itinerary sections into every response.
+```text
+1. Request understanding
+   Natural language → structured TravelRequest
+
+2. Response synthesis
+   Structured request + retrieved evidence → user-facing response
+```
+
+Deterministic validation, routing, location resolution, and external API execution do not require an LLM call.
+
+This reduces duplicated generation, token usage, latency, and hallucination surface compared with the previous itinerary-generation + final-response pipeline.
 
 ---
 
 ## Thread and Checkpoint Lifecycle
 
-LangGraph checkpoints are persisted in PostgreSQL and associated with a `thread_id`.
+LangGraph checkpoints are persisted in Neon PostgreSQL and associated with a `thread_id`.
 
-A thread represents a single planning workflow, not a permanent user identity.
-
-Current lifecycle:
+A thread represents one planning workflow, not a permanent user identity.
 
 ```text
 New independent request
@@ -298,9 +358,9 @@ Next independent request
 New thread
 ```
 
-Completed checkpoints remain persisted in PostgreSQL, but their state is not reused for unrelated planning requests.
+Completed checkpoints remain persisted, but completed threads are not reused for unrelated requests.
 
-This prevents previous trip state and messages from leaking into a new planning session.
+The frontend stores a thread ID only while a workflow is waiting for clarification.
 
 ---
 
@@ -310,43 +370,43 @@ This prevents previous trip state and messages from leaking into a new planning 
 FastAPI application, HTTP endpoints, and API response handling.
 
 `backend.py`  
-LangGraph construction, LLM configuration, PostgreSQL checkpointing, and workflow execution/resume logic.
+LangGraph construction, Groq configuration, PostgreSQL checkpointing, and workflow start/resume logic.
 
 `pydantic_models/travel_request.py`  
-Typed travel request models, request validation result models, and capability definitions.
+Typed travel request models, capability definitions, and request-check models.
 
 `llm/request_parser.py`  
-Structured LLM request extraction using Groq and Pydantic.
+Structured LLM extraction of natural-language requests into `TravelRequest`.
 
 `services/request_policy.py`  
-Deterministic business rules applied after LLM request extraction.
+Deterministic product rules applied after LLM extraction.
 
 `services/location_resolver.py`  
-Deterministic city, country, and IATA airport resolution.
+Deterministic city, country, airport, and IATA resolution.
 
 `validation/request_check.py`  
-Checks whether a structured request contains enough valid information for execution.
+Deterministic readiness validation before capability execution.
 
 `workflow/state.py`  
-Defines the LangGraph `TravelState`.
+LangGraph workflow state definition.
 
 `workflow/routing.py`  
-Contains deterministic conditional-routing logic.
+Deterministic conditional-routing logic.
 
 `workflow/nodes.py`  
-Contains the workflow node implementations.
+Request understanding, validation, clarification, external research, synchronization, and response-generation nodes.
 
 `tools/flight_tool.py`  
 AviationStack integration for retrieving flight information using resolved airport codes.
 
 `tools/tavily_tool.py`  
-Tavily search integration used for hotel and activity research.
+Tavily integration used for hotel and activity research.
 
 `templates/index.html`  
 Main frontend page.
 
 `static/script.js`  
-Frontend interaction, API requests, clarification thread handling, Markdown rendering, copy functionality, and PDF export.
+Frontend API interaction, clarification thread handling, Markdown rendering, copy functionality, and PDF export.
 
 ---
 
@@ -361,7 +421,7 @@ cd Travora
 
 ### 2. Install `uv`
 
-The project uses `uv` for Python environment and dependency management.
+The project uses `uv` for environment and dependency management.
 
 If `uv` is not installed:
 
@@ -375,7 +435,7 @@ pip install uv
 uv venv
 ```
 
-Activate it on Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
 .venv\Scripts\Activate.ps1
@@ -401,19 +461,16 @@ Create a `.env` file in the project root:
 
 ```env
 DATABASE_URL=your_postgresql_connection_string
-
 GROQ_API_KEY=your_groq_api_key
-
 TAVILY_API_KEY=your_tavily_api_key
-
 AVIATIONSTACK_API_KEY=your_aviationstack_api_key
 ```
 
-Optional LangSmith tracing can be configured through the standard LangSmith environment variables.
+For production, Travora currently uses Neon as its PostgreSQL provider.
 
-Do not commit your `.env` file.
+Optional LangSmith tracing can be enabled through the standard LangSmith environment variables.
 
-An `.env.example` file can be used as a reference.
+Do not commit `.env` or any credentials.
 
 ---
 
@@ -441,7 +498,7 @@ Run the complete test suite:
 uv run python -m pytest -v
 ```
 
-The test suite currently covers deterministic request validation, location resolution, and request-policy behavior.
+The test suite covers deterministic behavior including location resolution, request readiness validation, request-policy normalization, and workflow routing.
 
 For manual inspection of structured request parsing:
 
@@ -453,8 +510,22 @@ uv run python -m validation.inspect_request_parser
 
 ## Deployment
 
-Travora is containerized with docker and deployed as a Render web service.
+Travora is deployed as a Render web service.
 
-The production deployment uses the same FastAPI application and PostgreSQL-backed LangGraph checkpointing.
+Current production infrastructure:
 
+```text
+GitHub
+   ↓
+Render Web Service
+   ├── FastAPI
+   ├── LangGraph
+   └── External API integrations
+            ↓
+      Neon PostgreSQL
+      LangGraph checkpoints
+```
 
+Render hosts the application, while Neon provides the persistent PostgreSQL database used by LangGraph checkpointing.
+
+---
