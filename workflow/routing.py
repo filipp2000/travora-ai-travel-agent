@@ -6,13 +6,15 @@ from workflow.state import TravelState
 def route_after_check(
     state: TravelState,
 ) -> str | list[str]:
+    """
+    Route a validated request to the external capabilities
+    that require execution.
+    """
     request_check = state["request_check"]
     parsed_request = state["parsed_request"]
 
     if request_check is None or parsed_request is None:
-        raise ValueError(
-            "Request must be parsed and checked before routing."
-        )
+        raise ValueError("Request must be parsed and checked before routing.")
 
     if not request_check.ready:
         return "clarify_request"
@@ -30,15 +32,13 @@ def route_after_check(
     if TravelCapability.ACTIVITIES in capabilities:
         routes.append("activities_node")
 
-    # Flights/hotels/activities can be retrieved first.
+    # External research is needed.
     if routes:
         return routes
 
-    # An itinerary-only request needs no external retrieval.
-    if TravelCapability.ITINERARY in capabilities:
-        return "itinerary_node"
-
-    return "final_response_node"
+    # No external research was requested.
+    # Generate the requested answer directly.
+    return "generate_response_node"
 
 
 def route_after_research(

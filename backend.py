@@ -5,31 +5,25 @@ from functools import partial
 import certifi
 import psycopg
 from dotenv import load_dotenv
-from psycopg.rows import dict_row
-
 from langchain_core.messages import HumanMessage
 from langchain_groq import ChatGroq
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
+from psycopg.rows import dict_row
 
 from workflow.nodes import (
     activities_node,
     check_request_node,
     clarify_request_node,
-    final_response_node,
     flight_node,
+    generate_response_node,
     hotel_node,
-    itinerary_node,
     join_services_node,
     understand_request_node,
 )
-from workflow.routing import (
-    route_after_check,
-    route_after_research,
-)
+from workflow.routing import route_after_check
 from workflow.state import TravelState
-
 
 # =========================================================
 # Environment configuration
@@ -48,16 +42,13 @@ def get_database_url() -> str:
 
     if not database_url:
         raise ValueError(
-            "DATABASE_URL is missing. "
-            "Please add it to your environment variables."
+            "DATABASE_URL is missing. Please add it to your environment variables."
         )
 
     # Render PostgreSQL requires SSL for external connections.
     if "sslmode=" not in database_url:
         separator = "&" if "?" in database_url else "?"
-        database_url = (
-            f"{database_url}{separator}sslmode=require"
-        )
+        database_url = f"{database_url}{separator}sslmode=require"
 
     return database_url
 
@@ -66,8 +57,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 if not GROQ_API_KEY:
     raise ValueError(
-        "GROQ_API_KEY is missing. "
-        "Please add it to your environment variables."
+        "GROQ_API_KEY is missing. Please add it to your environment variables."
     )
 
 
@@ -156,25 +146,16 @@ graph.add_node(
 
 
 # ---------------------------------------------------------
-# Generation nodes
+# Response node
 # ---------------------------------------------------------
 
 graph.add_node(
-    "itinerary_node",
+    "generate_response_node",
     partial(
-        itinerary_node,
+        generate_response_node,
         llm=llm,
     ),
 )
-
-graph.add_node(
-    "final_response_node",
-    partial(
-        final_response_node,
-        llm=llm,
-    ),
-)
-
 
 # =========================================================
 # Graph edges
@@ -199,8 +180,7 @@ REQUEST_ROUTES = [
     "flight_node",
     "hotel_node",
     "activities_node",
-    "itinerary_node",
-    "final_response_node",
+    "generate_response_node",
 ]
 
 
@@ -217,15 +197,14 @@ graph.add_conditional_edges(
 
 # After clarification is supplied and validated again,
 # route into the appropriate capability nodes.
-graph.add_conditional_edges(
+graph.add_edge(
     "clarify_request",
-    route_after_check,
-    REQUEST_ROUTES,
+    "check_request",
 )
 
 
 # ---------------------------------------------------------
-# Parallel research fan-in
+# Parallel research
 # ---------------------------------------------------------
 
 # Any selected retrieval node eventually synchronizes
@@ -248,27 +227,17 @@ graph.add_edge(
 
 # Once research is complete, decide whether an itinerary
 # still needs to be generated.
-graph.add_conditional_edges(
+graph.add_edge(
     "join_services",
-    route_after_research,
-    [
-        "itinerary_node",
-        "final_response_node",
-    ],
+    "generate_response_node",
 )
 
 
-# Itinerary generation always flows into the final response.
+# Final response generation.
 graph.add_edge(
-    "itinerary_node",
-    "final_response_node",
-)
-
-graph.add_edge(
-    "final_response_node",
+    "generate_response_node",
     END,
 )
-
 
 # =========================================================
 # PostgreSQL checkpointing
@@ -302,6 +271,7 @@ travel_graph = graph.compile(
 # Graph execution helpers
 # =========================================================
 
+
 def _has_pending_interrupt(config: dict) -> bool:
     """
     Check whether the current thread is waiting for
@@ -312,10 +282,7 @@ def _has_pending_interrupt(config: dict) -> bool:
     snapshot = travel_graph.get_state(config)
 
     # Return True if bool(x) is True for any x in the iterable.
-    return any(
-        task.interrupts
-        for task in snapshot.tasks
-    )
+    return any(task.interrupts for task in snapshot.tasks)
 
 
 def _get_interrupt_question(
@@ -347,6 +314,7 @@ def _get_interrupt_question(
 # Public entry point used by FastAPI
 # =========================================================
 
+
 def run_travel_agent(
     user_input: str,
     thread_id: str | None = None,
@@ -375,15 +343,11 @@ def run_travel_agent(
             }
         }
 
-        if _has_pending_interrupt(
-            resume_config
-        ):
+        if _has_pending_interrupt(resume_config):
             active_thread_id = thread_id
 
             result = travel_graph.invoke(
-                Command(
-                    resume=user_input
-                ),
+                Command(resume=user_input),
                 config=resume_config,
             )
 
@@ -396,34 +360,24 @@ def run_travel_agent(
     # No resumable thread -> start a new planning session.
     # -----------------------------------------------------
     if not thread_id:
-        active_thread_id = (
-            f"trip_{uuid.uuid4().hex}"
-        )
+        active_thread_id = f"trip_{uuid.uuid4().hex}"
 
         config = {
             "configurable": {
-                "thread_id":
-                    active_thread_id,
+                "thread_id": active_thread_id,
             }
         }
 
         initial_state: TravelState = {
-            "messages": [
-                HumanMessage(
-                    content=user_input
-                )
-            ],
+            "messages": [HumanMessage(content=user_input)],
             "user_query": user_input,
-
             # Request understanding / validation
             "parsed_request": None,
             "request_check": None,
-
             # Service results are scoped to this trip.
             "flight_results": "",
             "hotel_results": "",
             "activity_results": "",
-
             # Generated outputs are also scoped
             # to this planning session.
             "itinerary": "",
@@ -438,48 +392,31 @@ def run_travel_agent(
     # -----------------------------------------------------
     # The graph paused and needs user clarification.
     # -----------------------------------------------------
-    clarification_question = (
-        _get_interrupt_question(
-            result
-        )
-    )
+    clarification_question = _get_interrupt_question(result)
 
     if clarification_question:
         return {
-            "status":
-                "requires_input",
-
+            "status": "requires_input",
             # The frontend must preserve this ID
             # until the clarification is answered.
-            "thread_id":
-                active_thread_id,
-
-            "answer":
-                clarification_question,
-
-            "flight_results":
-                result.get(
-                    "flight_results",
-                    "",
-                ),
-
-            "hotel_results":
-                result.get(
-                    "hotel_results",
-                    "",
-                ),
-
-            "activity_results":
-                result.get(
-                    "activity_results",
-                    "",
-                ),
-
-            "itinerary":
-                result.get(
-                    "itinerary",
-                    "",
-                ),
+            "thread_id": active_thread_id,
+            "answer": clarification_question,
+            "flight_results": result.get(
+                "flight_results",
+                "",
+            ),
+            "hotel_results": result.get(
+                "hotel_results",
+                "",
+            ),
+            "activity_results": result.get(
+                "activity_results",
+                "",
+            ),
+            "itinerary": result.get(
+                "itinerary",
+                "",
+            ),
         }
 
     # -----------------------------------------------------
@@ -489,33 +426,24 @@ def run_travel_agent(
     return {
         "status": "completed",
         "thread_id": active_thread_id,
-
         "answer": result.get(
             "final_answer",
             "",
         ),
-
-        "flight_results":
-            result.get(
-                "flight_results",
-                "",
-            ),
-
-        "hotel_results":
-            result.get(
-                "hotel_results",
-                "",
-            ),
-
-        "activity_results":
-            result.get(
-                "activity_results",
-                "",
-            ),
-
-        "itinerary":
-            result.get(
-                "itinerary",
-                "",
-            ),
+        "flight_results": result.get(
+            "flight_results",
+            "",
+        ),
+        "hotel_results": result.get(
+            "hotel_results",
+            "",
+        ),
+        "activity_results": result.get(
+            "activity_results",
+            "",
+        ),
+        "itinerary": result.get(
+            "itinerary",
+            "",
+        ),
     }

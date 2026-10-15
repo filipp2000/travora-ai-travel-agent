@@ -1,8 +1,7 @@
-import os  
-import certifi
-import pycountry
-import airportsdata
+import os
 import re
+
+import certifi
 import requests
 from dotenv import load_dotenv
 
@@ -12,18 +11,15 @@ from services.location_resolver import (
 )
 
 load_dotenv()
-
 os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
-
 API_KEY = os.getenv("AVIATIONSTACK_API_KEY")
-
 # Default origin when user says only destination, e.g. "Japan trip"
-DEFAULT_ORIGIN_IATA = os.getenv("DEFAULT_ORIGIN_IATA", "ATH")  # Default to Athens, Greece
-
+DEFAULT_ORIGIN_IATA = os.getenv(
+    "DEFAULT_ORIGIN_IATA", "ATH"
+)  # Default to Athens, Greece
 
 BASE_URL = "https://api.aviationstack.com/v1/flights"
-
 
 
 def parse_route(
@@ -54,10 +50,7 @@ def parse_route(
         "worldwide flights",
     ]
 
-    if any(
-        keyword in query_lower
-        for keyword in global_keywords
-    ):
+    if any(keyword in query_lower for keyword in global_keywords):
         return None, None
 
     # Explicit IATA route:
@@ -71,13 +64,9 @@ def parse_route(
     )
 
     if iata_match:
-        departure = resolve_location_to_iata(
-            iata_match.group(1)
-        )
+        departure = resolve_location_to_iata(iata_match.group(1))
 
-        arrival = resolve_location_to_iata(
-            iata_match.group(2)
-        )
+        arrival = resolve_location_to_iata(iata_match.group(2))
 
         if departure and arrival:
             return departure, arrival
@@ -95,12 +84,8 @@ def parse_route(
         destination_text = match.group(2)
 
         return (
-            resolve_location_to_iata(
-                origin_text
-            ),
-            resolve_location_to_iata(
-                destination_text
-            ),
+            resolve_location_to_iata(origin_text),
+            resolve_location_to_iata(destination_text),
         )
 
     # "to Japan from Greece"
@@ -116,12 +101,8 @@ def parse_route(
         origin_text = match.group(2)
 
         return (
-            resolve_location_to_iata(
-                origin_text
-            ),
-            resolve_location_to_iata(
-                destination_text
-            ),
+            resolve_location_to_iata(origin_text),
+            resolve_location_to_iata(destination_text),
         )
 
     mentions = find_location_mentions(query)
@@ -136,19 +117,12 @@ def parse_route(
     if match:
         origin_text = match.group(1)
 
-        departure = resolve_location_to_iata(
-            origin_text
-        )
-        
-        for mention in mentions:
-            candidate = resolve_location_to_iata(
-                mention
-            )
+        departure = resolve_location_to_iata(origin_text)
 
-            if (
-                candidate
-                and candidate != departure
-            ):
+        for mention in mentions:
+            candidate = resolve_location_to_iata(mention)
+
+            if candidate and candidate != departure:
                 return departure, candidate
 
         return departure, None
@@ -163,29 +137,21 @@ def parse_route(
     if match:
         destination_text = match.group(1)
 
-        arrival = resolve_location_to_iata(
-            destination_text
-        )
+        arrival = resolve_location_to_iata(destination_text)
 
         return None, arrival
 
     # Two detected locations.
     if len(mentions) >= 2:
-        departure = resolve_location_to_iata(
-            mentions[0]
-        )
+        departure = resolve_location_to_iata(mentions[0])
 
-        arrival = resolve_location_to_iata(
-            mentions[1]
-        )
+        arrival = resolve_location_to_iata(mentions[1])
 
         return departure, arrival
 
     # Destination-only request.
     if len(mentions) == 1:
-        arrival = resolve_location_to_iata(
-            mentions[0]
-        )
+        arrival = resolve_location_to_iata(mentions[0])
 
         return DEFAULT_ORIGIN_IATA, arrival
 
@@ -206,99 +172,46 @@ def has_explicit_origin(
 def format_flight(
     flight: dict,
 ) -> str:
-    airline = (
-        flight
-        .get("airline", {})
-        .get("name")
-        or "Unknown airline"
-    )
+    airline = flight.get("airline", {}).get("name") or "Unknown airline"
 
-    flight_number = (
-        flight
-        .get("flight", {})
-        .get("iata")
-        or "Unknown flight number"
-    )
+    flight_number = flight.get("flight", {}).get("iata") or "Unknown flight number"
 
-    status = (
-        flight.get("flight_status")
-        or "Unknown"
-    )
+    status = flight.get("flight_status") or "Unknown"
 
-    departure = (
-        flight.get("departure", {})
-        or {}
-    )
+    departure = flight.get("departure", {}) or {}
 
-    arrival = (
-        flight.get("arrival", {})
-        or {}
-    )
+    arrival = flight.get("arrival", {}) or {}
 
-    departure_airport = (
-        departure.get("airport")
-        or "Unknown departure airport"
-    )
+    departure_airport = departure.get("airport") or "Unknown departure airport"
 
-    departure_iata = (
-        departure.get("iata")
-        or "Unknown"
-    )
+    departure_iata = departure.get("iata") or "Unknown"
 
-    departure_terminal = (
-        departure.get("terminal")
-        or "N/A"
-    )
+    departure_terminal = departure.get("terminal") or "N/A"
 
-    departure_gate = (
-        departure.get("gate")
-        or "N/A"
-    )
+    departure_gate = departure.get("gate") or "N/A"
 
-    departure_scheduled = (
-        departure.get("scheduled")
-        or "Unknown"
-    )
+    departure_scheduled = departure.get("scheduled") or "Unknown"
 
     departure_delay = departure.get("delay")
 
     departure_delay_text = (
-        f"{departure_delay} minutes"
-        if departure_delay is not None
-        else "N/A"
+        f"{departure_delay} minutes" if departure_delay is not None else "N/A"
     )
 
-    arrival_airport = (
-        arrival.get("airport")
-        or "Unknown arrival airport"
-    )
+    arrival_airport = arrival.get("airport") or "Unknown arrival airport"
 
-    arrival_iata = (
-        arrival.get("iata")
-        or "Unknown"
-    )
+    arrival_iata = arrival.get("iata") or "Unknown"
 
-    arrival_terminal = (
-        arrival.get("terminal")
-        or "N/A"
-    )
+    arrival_terminal = arrival.get("terminal") or "N/A"
 
-    arrival_gate = (
-        arrival.get("gate")
-        or "N/A"
-    )
+    arrival_gate = arrival.get("gate") or "N/A"
 
-    arrival_scheduled = (
-        arrival.get("scheduled")
-        or "Unknown"
-    )
+    arrival_scheduled = arrival.get("scheduled") or "Unknown"
 
     arrival_delay = arrival.get("delay")
 
     arrival_delay_text = (
-        f"{arrival_delay} minutes"
-        if arrival_delay is not None
-        else "N/A"
+        f"{arrival_delay} minutes" if arrival_delay is not None else "N/A"
     )
 
     return f"""
@@ -330,9 +243,7 @@ def search_flights_by_route(
     limit: int = 10,
 ) -> str:
     if not API_KEY:
-        return (
-            "Flight API error: AVIATIONSTACK_API_KEY is missing."
-        )
+        return "Flight API error: AVIATIONSTACK_API_KEY is missing."
 
     if limit < 1:
         return "Flight search error: limit must be greater than zero."
@@ -381,10 +292,7 @@ def search_flights_by_route(
         route_text = ""
 
         if departure_iata and arrival_iata:
-            route_text = (
-                f" for route {departure_iata} "
-                f"to {arrival_iata}"
-            )
+            route_text = f" for route {departure_iata} to {arrival_iata}"
         elif departure_iata:
             route_text = f" from {departure_iata}"
         elif arrival_iata:
@@ -397,10 +305,7 @@ def search_flights_by_route(
         )
 
     if departure_iata and arrival_iata:
-        route_info = (
-            f"Live flights from {departure_iata} "
-            f"to {arrival_iata}"
-        )
+        route_info = f"Live flights from {departure_iata} to {arrival_iata}"
     elif departure_iata:
         route_info = f"Live flights from {departure_iata}"
     elif arrival_iata:
@@ -408,15 +313,10 @@ def search_flights_by_route(
     else:
         route_info = "Global live flights"
 
-    formatted_flights = [
-        format_flight(flight)
-        for flight in flight_data[:limit]
-    ]
+    formatted_flights = [format_flight(flight) for flight in flight_data[:limit]]
 
-    return (
-        f"{route_info}\n\n"
-        + "\n\n---\n\n".join(formatted_flights)
-    )
+    return f"{route_info}\n\n" + "\n\n---\n\n".join(formatted_flights)
+
 
 def search_flights(
     query: str,
@@ -439,23 +339,15 @@ def search_flights(
         )
 
     if limit < 1:
-        return (
-            "Flight search error: "
-            "limit must be greater than zero."
-        )
+        return "Flight search error: limit must be greater than zero."
 
     limit = min(limit, 100)
 
     # Only once. Your current uploaded file
     # accidentally calls parse_route() twice.
-    departure_iata, arrival_iata = parse_route(
-        query
-    )
+    departure_iata, arrival_iata = parse_route(query)
 
-    if (
-        has_explicit_origin(query)
-        and departure_iata is None
-    ):
+    if has_explicit_origin(query) and departure_iata is None:
         return (
             "Flight search could not resolve "
             "the departure location. "
@@ -486,14 +378,10 @@ def search_flights(
         data = response.json()
 
     except requests.exceptions.RequestException as exc:
-        return (
-            f"Flight API request failed: {exc}"
-        )
+        return f"Flight API request failed: {exc}"
 
     except ValueError:
-        return (
-            "Flight API returned invalid JSON."
-        )
+        return "Flight API returned invalid JSON."
 
     if "error" in data:
         error = data["error"]
@@ -512,21 +400,13 @@ def search_flights(
         route_text = ""
 
         if departure_iata and arrival_iata:
-            route_text = (
-                f" for route "
-                f"{departure_iata} "
-                f"to {arrival_iata}"
-            )
+            route_text = f" for route {departure_iata} to {arrival_iata}"
 
         elif departure_iata:
-            route_text = (
-                f" from {departure_iata}"
-            )
+            route_text = f" from {departure_iata}"
 
         elif arrival_iata:
-            route_text = (
-                f" to {arrival_iata}"
-            )
+            route_text = f" to {arrival_iata}"
 
         return (
             f"No live flight data found"
@@ -537,51 +417,25 @@ def search_flights(
         )
 
     if departure_iata and arrival_iata:
-        route_info = (
-            f"Live flights from "
-            f"{departure_iata} "
-            f"to {arrival_iata}"
-        )
+        route_info = f"Live flights from {departure_iata} to {arrival_iata}"
 
     elif departure_iata:
-        route_info = (
-            f"Live flights from "
-            f"{departure_iata}"
-        )
+        route_info = f"Live flights from {departure_iata}"
 
     elif arrival_iata:
-        route_info = (
-            f"Live flights to "
-            f"{arrival_iata}"
-        )
+        route_info = f"Live flights to {arrival_iata}"
 
     else:
         route_info = "Global live flights"
 
-    formatted_flights = [
-        format_flight(flight)
-        for flight in flight_data[:limit]
-    ]
+    formatted_flights = [format_flight(flight) for flight in flight_data[:limit]]
 
-    return (
-        f"{route_info}\n\n"
-        + "\n\n---\n\n".join(
-            formatted_flights
-        )
-    )
+    return f"{route_info}\n\n" + "\n\n---\n\n".join(formatted_flights)
 
 
 if __name__ == "__main__":
-    print(
-        search_flights(
-            "Plan a 7 days Japan trip from Athens"
-        )
-    )
+    print(search_flights("Plan a 7 days Japan trip from Athens"))
 
     print("\n" + "=" * 80 + "\n")
 
-    print(
-        search_flights(
-            "all country flight info"
-        )
-    )
+    print(search_flights("all country flight info"))
