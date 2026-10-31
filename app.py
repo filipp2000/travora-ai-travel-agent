@@ -1,4 +1,5 @@
 import traceback
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
@@ -8,14 +9,35 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from backend import run_travel_agent
+from backend import (
+    checkpointer,
+    db_pool,
+    run_travel_agent,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup code: Open the database connection pool.
+    db_pool.open()
+
+    try:
+        checkpointer.setup()
+        yield
+
+    finally:
+        # Shutdown code: Close the database connection pool.
+        db_pool.close()
+
+
+# FastAPI initialization
 app = FastAPI(
     title="Travel Agent",
     description="LangGraph Multi-Agent Travel Planner that helps users plan trips, find flights and hotels, and create itineraries.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 
