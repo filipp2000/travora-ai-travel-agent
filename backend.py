@@ -3,7 +3,6 @@ import uuid
 from functools import partial
 
 import certifi
-import psycopg
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from langchain_groq import ChatGroq
@@ -11,6 +10,7 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from workflow.nodes import (
     activities_node,
@@ -245,22 +245,26 @@ graph.add_edge(
 
 DATABASE_URL = get_database_url()
 
-# The checkpointer currently uses one persistent PostgreSQL
-# connection. We will move DB lifecycle/pooling into the
-# application lifespan during the concurrency/reliability phase.
-_conn = psycopg.connect(
-    DATABASE_URL,
-    autocommit=True,
-    row_factory=dict_row,
+# Use a connection pool instead of a single persistent DB connection.
+# This is important when using serverless PostgreSQL (like Neon).
+db_pool = ConnectionPool(
+    conninfo=DATABASE_URL,
+    min_size=0,
+    max_size=4,
+    timeout=30.0,
+    max_idle=60.0,
+    max_lifetime=900.0,
+    kwargs={
+        "autocommit": True,
+        "row_factory": dict_row,
+    },
+    # Simple check to verify that a connection is still working.
+    # Return quietly if the connection is still working, otherwise raise an exception.
+    check=ConnectionPool.check_connection,
+    open=False,
 )
 
-checkpointer = PostgresSaver(_conn)
-
-# Creates LangGraph checkpoint tables if they do not exist.
-# Later this should become an explicit deployment/startup
-# migration rather than running on every module import.
-checkpointer.setup()
-
+checkpointer = PostgresSaver(db_pool)
 
 travel_graph = graph.compile(
     checkpointer=checkpointer,
