@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from pydantic_models.api_request import TravelRequestBody
 
 from backend import (
     checkpointer,
@@ -70,7 +71,7 @@ async def home(request: Request):
 
 
 @app.post("/api/travel")
-async def travel_planner(request_data: TravelRequest):
+async def travel_planner(request_data: TravelRequestBody):
     try:
         user_message = request_data.message.strip()
 
@@ -101,6 +102,7 @@ async def travel_planner(request_data: TravelRequest):
             }
         )
 
+    # TODO: Exception handling returns raw exceptions on client side. This is not ideal for production. Consider logging the error and returning a generic error message instead.
     except Exception as e:
         print("ERROR:", e)
         traceback.print_exc()

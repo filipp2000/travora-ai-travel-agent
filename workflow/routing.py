@@ -1,4 +1,4 @@
-from pydantic_models.travel_request import TravelCapability
+from pydantic_models.travel_request import RequestIntent, TravelCapability
 from workflow.state import TravelState
 
 
@@ -15,6 +15,11 @@ def route_after_check(
 
     if request_check is None or parsed_request is None:
         raise ValueError("Request must be parsed and checked before routing.")
+
+    # Reject requests without executable capabilities
+    # before checking whether clarification is needed.
+    if parsed_request.intent != RequestIntent.TRAVEL or not parsed_request.capabilities:
+        return "scope_response"
 
     if not request_check.ready:
         return "clarify_request"
@@ -53,3 +58,17 @@ def route_after_research(
         return "itinerary_node"
 
     return "final_response_node"
+
+
+def route_after_understanding(
+    state: TravelState,
+) -> str:
+    request = state.get("parsed_request")
+
+    if request is None:
+        raise ValueError("Parsed request is missing.")
+
+    if request.intent != RequestIntent.TRAVEL or not request.capabilities:
+        return "scope_response"
+
+    return "check_request"

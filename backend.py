@@ -20,9 +20,10 @@ from workflow.nodes import (
     generate_response_node,
     hotel_node,
     join_services_node,
+    scope_response_node,
     understand_request_node,
 )
-from workflow.routing import route_after_check
+from workflow.routing import route_after_check, route_after_understanding
 from workflow.state import TravelState
 
 # =========================================================
@@ -84,6 +85,11 @@ graph = StateGraph(TravelState)
 # ---------------------------------------------------------
 # Request understanding
 # ---------------------------------------------------------
+
+graph.add_node(
+    "scope_response",
+    scope_response_node,
+)
 
 # Convert the raw user prompt into our typed TravelRequest.
 graph.add_node(
@@ -167,16 +173,20 @@ graph.add_edge(
     "understand_request",
 )
 
-graph.add_edge(
+graph.add_conditional_edges(
     "understand_request",
-    "check_request",
+    route_after_understanding,
+    [
+        "check_request",
+        "scope_response",
+    ],
 )
-
 
 # These are all valid destinations that route_after_check()
 # may return.
 REQUEST_ROUTES = [
     "clarify_request",
+    "scope_response",
     "flight_node",
     "hotel_node",
     "activities_node",
@@ -236,6 +246,11 @@ graph.add_edge(
 # Final response generation.
 graph.add_edge(
     "generate_response_node",
+    END,
+)
+
+graph.add_edge(
+    "scope_response",
     END,
 )
 

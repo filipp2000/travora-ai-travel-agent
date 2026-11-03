@@ -6,13 +6,34 @@ from langchain_core.messages import (
 from langgraph.types import interrupt
 
 from llm.request_parser import understand_request
-from pydantic_models.travel_request import TravelCapability
+from pydantic_models.travel_request import RequestIntent, TravelCapability
 from services.request_policy import apply_request_policy
 from tools.flight_tool import search_flights_by_route
 from tools.tavily_tool import tavily_search
 from validation.request_check import check_request
 from workflow.state import TravelState
 
+
+def scope_response_node(state: TravelState) -> dict:
+    request = state.get("parsed_request")
+
+    if request is None:
+        raise ValueError("Parsed request is missing.")
+
+    if request.intent == RequestIntent.OUT_OF_SCOPE:
+        answer = (
+            "Travora specializes in travel planning, "
+            "flights, hotels, and activities. "
+            "Please ask me a travel-related question."
+        )
+    else:
+        answer = (
+            "I can help you plan trips, find flights, "
+            "research hotels, and explore activities. "
+            "Could you describe what you would like to plan?"
+        )
+
+    return {"final_answer": answer}
 
 # Request understanding node
 def understand_request_node(

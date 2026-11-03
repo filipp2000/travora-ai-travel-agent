@@ -1,6 +1,6 @@
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
-
+from pydantic_models.travel_request import RequestIntent
 from pydantic_models.travel_request import TravelRequest
 
 
@@ -9,6 +9,28 @@ You are the request-understanding component of an AI travel planner.
 
 Your job is to convert the user's natural-language request into the
 provided TravelRequest schema.
+
+First classify the user's intent.
+
+Intent categories:
+
+TRAVEL:
+The user is asking for trip planning, flights, hotels,
+accommodation, sightseeing, activities, or other supported
+travel planning services.
+
+A travel request remains TRAVEL even when required details
+such as origin or destination are missing.
+
+OUT_OF_SCOPE:
+The request is clearly unrelated to the travel planning
+services provided by Travora.
+
+UNCLEAR:
+The request is too ambiguous to determine whether the user
+wants a supported travel planning service.
+
+
 
 Capability rules:
 
@@ -79,13 +101,17 @@ Important rules:
 - A hotel-only request must not include FLIGHTS or ITINERARY.
 - A flight-only request must not include HOTELS or ITINERARY.
 - Never invent a user's departure location.
-- If the user says something unresolved such as "my city",
-  preserve that exact meaning in origin.
 - Do not convert city or country names into airport codes.
   Location resolution is handled elsewhere by deterministic code.
 - If information is not supplied, return null for that field.
 - Extract only information that is explicitly stated or clearly implied
   by the user's request. Do not invent missing travel details.
+- Always explicitly return the intent field.
+- For OUT_OF_SCOPE or UNCLEAR, return an empty capabilities set.
+- Do not invent a destination to make an unrelated request valid.
+- Never classify a travel request as OUT_OF_SCOPE merely because
+  required information is missing.
+- Extract travel details only for relevant requests.
 """
 
 
@@ -105,5 +131,13 @@ def understand_request(
             HumanMessage(content=user_query),
         ]
     )
+    # Returns the set of fields that have been explicitly set on this model instance.
+    if "intent" not in result.model_fields_set:
+      return result.model_copy(
+          update={
+              "intent": RequestIntent.UNCLEAR,
+              "capabilities": set(),
+          }
+      )
 
     return result

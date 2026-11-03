@@ -1,6 +1,13 @@
 from enum import StrEnum
 from pydantic import BaseModel, Field
 
+
+# User input intent classification
+class RequestIntent(StrEnum):
+    TRAVEL = "travel"
+    OUT_OF_SCOPE = "out_of_scope"
+    UNCLEAR = "unclear"
+
 # Create a travel request domain model
 class TravelCapability(StrEnum):
     FLIGHTS = "flights"
@@ -62,6 +69,15 @@ class TravelRequest(BaseModel):
             "Relevant travel preferences such as budget, luxury, family, "
             "nightlife, beaches, museums, or vegetarian."
         ),
+    )
+    
+    intent: RequestIntent = Field(
+        default=RequestIntent.TRAVEL,
+        description=(
+            "Classify whether the input is a travel-related request, "
+            "outside the application's scope, or too ambiguous "
+            "to classify reliably."
+    ),
     )
 
 
