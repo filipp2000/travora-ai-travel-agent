@@ -5,9 +5,17 @@ from langchain_core.messages import (
 )
 from langgraph.types import interrupt
 
-from llm.request_parser import understand_request
+from llm.request_parser import extract_trip_turn
 from pydantic_models.travel_request import RequestIntent, TravelCapability
+from pydantic_models.trip_context import (
+    TripContext,
+    TripContextUpdate,
+)
 from services.request_policy import apply_request_policy
+from services.trip_context_service import (
+    merge_trip_context,
+    to_travel_request,
+)
 from tools.flight_tool import search_flights_by_route
 from tools.tavily_tool import tavily_search
 from validation.request_check import check_request
@@ -35,24 +43,58 @@ def scope_response_node(state: TravelState) -> dict:
 
     return {"final_answer": answer}
 
+
 # Request understanding node
+
+
 def understand_request_node(
     state: TravelState,
     *,
     llm: BaseChatModel,
 ) -> dict:
-    # Step 1: Let the LLM extract semantic information
-    # from the user's natural-language request.
-    parsed_request = understand_request(
-        user_query=state["user_query"],
+    """
+    Extract one user turn and update the accumulated trip context.
+
+    The existing execution workflow continues to consume TravelRequest.
+    """
+
+    # Use existing trip information if available.
+    # A new planning session starts with an empty context.
+    current_context = state.get("trip_context") or TripContext()
+
+    turn = extract_trip_turn(
+        latest_message=state["user_query"],
+        current_context=current_context,
         llm=llm,
     )
 
-    # Step 2: Enforce deterministic Travora product rules
-    # before validation and graph routing.
-    normalized_request = apply_request_policy(parsed_request)
+    # Do not merge unrelated information into an existing trip.
+    if turn.intent != RequestIntent.TRAVEL:
+        return {
+            "trip_context": current_context,
+            "parsed_request": to_travel_request(
+                current_context,
+                intent=turn.intent,
+            ),
+        }
+
+    # Deterministic merge preserves previously collected information.
+    updated_context = merge_trip_context(
+        current_context,
+        turn.update,
+    )
+
+    # Adapt the accumulated context for the existing execution nodes.
+    execution_request = to_travel_request(
+        updated_context,
+        intent=turn.intent,
+    )
+
+    # Retain our deterministic end-to-end trip policy.
+    normalized_request = apply_request_policy(execution_request)
 
     return {
+        "trip_context": updated_context,
         "parsed_request": normalized_request,
     }
 
@@ -110,16 +152,28 @@ def clarify_request_node(
         }
     )
 
-    # Update the parsed request with the clarified answer
+    # The current clarification node expects one location answer.
+    answer_text = str(answer).strip()
+
     updated_request = parsed_request.model_copy(
         update={
-            field: str(answer).strip(),
+            field: answer_text,
         }
+    )
+
+    # Keep the accumulated trip context consistent with the
+    # clarified execution request.
+    current_context = state.get("trip_context") or TripContext()
+
+    updated_context = merge_trip_context(
+        current_context,
+        TripContextUpdate(**{field: answer_text}),
     )
 
     return {
         "parsed_request": updated_request,
-        "messages": [HumanMessage(content=str(answer))],
+        "trip_context": updated_context,
+        "messages": [HumanMessage(content=answer_text)],
     }
 
 

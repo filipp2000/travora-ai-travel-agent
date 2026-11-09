@@ -12,6 +12,7 @@ from langgraph.types import Command
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
+from pydantic_models.trip_context import TripContext
 from workflow.nodes import (
     activities_node,
     check_request_node,
@@ -388,20 +389,22 @@ def run_travel_agent(
         }
 
         initial_state: TravelState = {
-            "messages": [HumanMessage(content=user_input)],
-            "user_query": user_input,
-            # Request understanding / validation
-            "parsed_request": None,
-            "request_check": None,
-            # Service results are scoped to this trip.
-            "flight_results": "",
-            "hotel_results": "",
-            "activity_results": "",
-            # Generated outputs are also scoped
-            # to this planning session.
-            "itinerary": "",
-            "final_answer": "",
-        }
+        "messages": [HumanMessage(content=user_input)],
+        "user_query": user_input,
+
+        # Start each independent trip with its own context.
+        "trip_context": TripContext(),
+
+        "parsed_request": None,
+        "request_check": None,
+
+        "flight_results": "",
+        "hotel_results": "",
+        "activity_results": "",
+
+        "itinerary": "",
+        "final_answer": "",
+    }
 
         result = travel_graph.invoke(
             initial_state,

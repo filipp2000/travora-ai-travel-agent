@@ -7,11 +7,14 @@ from pydantic_models.travel_request import (
     RequestCheck,
     TravelRequest,
 )
+from pydantic_models.trip_context import TripContext
 
 
 class TravelState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]
 
+    # Accumulated planning data for the current trip.
+    trip_context: TripContext | None
     user_query: str
 
     parsed_request: TravelRequest | None

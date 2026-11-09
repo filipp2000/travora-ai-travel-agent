@@ -8,13 +8,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from pydantic_models.api_request import TravelRequestBody
 
 from backend import (
     checkpointer,
     db_pool,
     run_travel_agent,
 )
+from pydantic_models.api_request import TravelRequestBody
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -109,8 +109,9 @@ async def travel_planner(request_data: TravelRequestBody):
 
         return JSONResponse(
             status_code=500, content={"success": False, "error": str(e)}
-        )
+       )
 
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+    
