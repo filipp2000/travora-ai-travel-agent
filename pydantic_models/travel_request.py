@@ -8,6 +8,7 @@ class RequestIntent(StrEnum):
     OUT_OF_SCOPE = "out_of_scope"
     UNCLEAR = "unclear"
 
+
 # Create a travel request domain model
 class TravelCapability(StrEnum):
     FLIGHTS = "flights"
@@ -19,9 +20,7 @@ class TravelCapability(StrEnum):
 # What the parsed user request
 class TravelRequest(BaseModel):
     capabilities: set[TravelCapability] = Field(
-        description=(
-            "Travel capabilities explicitly or clearly requested by the user."
-        )
+        description=("Travel capabilities explicitly or clearly requested by the user.")
     )
 
     origin: str | None = Field(
@@ -40,29 +39,23 @@ class TravelRequest(BaseModel):
 
     duration_days: int | None = Field(
         default=None,
-        description=(
-            "Duration of the trip in days."
-        ),
+        description=("Duration of the trip in days."),
     )
 
     budget_amount: float | None = Field(
         default=None,
-        description=(
-            "Maximum amount the user is willing to spend on the trip."
-        ),
+        description=("Maximum amount the user is willing to spend on the trip."),
     )
     budget_currency: str | None = Field(
         default=None,
-        description=(
-            "Currency code such as USD or EUR when a budget is provided."
-        ),
+        description=("Currency code such as USD or EUR when a budget is provided."),
     )
 
     travelers: int | None = Field(
         default=None,
         description="Number of travelers, if explicitly provided.",
     )
-    
+
     preferences: list[str] = Field(
         default_factory=list,
         description=(
@@ -70,14 +63,14 @@ class TravelRequest(BaseModel):
             "nightlife, beaches, museums, or vegetarian."
         ),
     )
-    
+
     intent: RequestIntent = Field(
         default=RequestIntent.TRAVEL,
         description=(
             "Classify whether the input is a travel-related request, "
             "outside the application's scope, or too ambiguous "
             "to classify reliably."
-    ),
+        ),
     )
 
 

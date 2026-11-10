@@ -12,13 +12,13 @@ from pydantic_models.trip_context import (
     TripContextUpdate,
 )
 from services.request_policy import apply_request_policy
+from services.request_validation import check_request
 from services.trip_context_service import (
     merge_trip_context,
     to_travel_request,
 )
 from tools.flight_tool import search_flights_by_route
 from tools.tavily_tool import tavily_search
-from validation.request_check import check_request
 from workflow.state import TravelState
 
 
