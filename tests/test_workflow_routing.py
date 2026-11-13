@@ -54,7 +54,7 @@ def test_valid_hotel_request_reaches_validation():
 
     state = {"parsed_request": request}
 
-    assert route_after_understanding(state) == "check_request"
+    assert route_after_understanding(state) == "assess_trip_readiness"
 
 
 def test_incomplete_flight_request_reaches_validation():
@@ -67,7 +67,7 @@ def test_incomplete_flight_request_reaches_validation():
 
     state = {"parsed_request": request}
 
-    assert route_after_understanding(state) == "check_request"
+    assert route_after_understanding(state) == "assess_trip_readiness"
 
 
 def test_unclear_request_does_not_call_research():
