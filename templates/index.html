@@ -62,7 +62,24 @@
             </div>
 
             <div class="prompt-wrapper">
+                <div class="session-controls">
+                <button
+                    type="button"
+                    id="newTripBtn"
+                    onclick="newTrip()"
+                >
+                    New Trip
+                </button>
 
+                <button
+                    type="button"
+                    id="cancelTripBtn"
+                    class="hidden"
+                    onclick="cancelTrip()"
+                >
+                    Cancel Trip
+                </button>
+            </div>
                 <textarea
                     id="userInput"
                     placeholder="Example: Plan a 5 day trip to Italy from Greece including flights, hotels and sightseeing under €1500..."

@@ -897,3 +897,25 @@ footer span:first-child {
         padding: 21px;
     }
 }
+
+/* Temporary session controls until the chat-first UI in 1F. */
+.session-controls {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+
+.session-controls button {
+    padding: 0.65rem 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 0.75rem;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.session-controls button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
