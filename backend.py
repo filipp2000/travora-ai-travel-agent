@@ -7,14 +7,33 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from langchain_groq import ChatGroq
 from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from pydantic_models.trip_context import TripContext
+from pydantic_models.api_request import SessionAction
+from pydantic_models.travel_request import (
+    RequestCheck,
+    RequestIntent,
+    TravelCapability,
+    TravelRequest,
+)
+from pydantic_models.trip_context import BudgetScope, TripContext
+from pydantic_models.trip_readiness import (
+    ReadinessIssue,
+    TripReadiness,
+)
+from services.session_lifecycle import (
+    SessionConflictError,
+    cancel_pending_session,
+    require_pending_session,
+)
 from workflow.nodes import (
     activities_node,
+    ask_trip_details_node,
+    assess_trip_readiness_node,
     check_request_node,
     clarify_request_node,
     flight_node,
@@ -24,7 +43,11 @@ from workflow.nodes import (
     scope_response_node,
     understand_request_node,
 )
-from workflow.routing import route_after_check, route_after_understanding
+from workflow.routing import (
+    route_after_check,
+    route_after_readiness,
+    route_after_understanding,
+)
 from workflow.state import TravelState
 
 # =========================================================
@@ -99,6 +122,18 @@ graph.add_node(
         understand_request_node,
         llm=llm,
     ),
+)
+
+# Determine whether the accumulated trip information is complete.
+graph.add_node(
+    "assess_trip_readiness",
+    assess_trip_readiness_node,
+)
+
+# Ask for missing details and pause the current LangGraph thread.
+graph.add_node(
+    "ask_trip_details",
+    ask_trip_details_node,
 )
 
 # Deterministically check whether the parsed request has
@@ -178,9 +213,26 @@ graph.add_conditional_edges(
     "understand_request",
     route_after_understanding,
     [
-        "check_request",
+        "assess_trip_readiness",
         "scope_response",
     ],
+)
+
+# Decide whether to ask for information or continue execution.
+graph.add_conditional_edges(
+    "assess_trip_readiness",
+    route_after_readiness,
+    [
+        "ask_trip_details",
+        "check_request",
+    ],
+)
+
+# After receiving a clarification, interpret the user's reply
+# using the accumulated context from the same LangGraph thread.
+graph.add_edge(
+    "ask_trip_details",
+    "understand_request",
 )
 
 # These are all valid destinations that route_after_check()
@@ -280,7 +332,28 @@ db_pool = ConnectionPool(
     open=False,
 )
 
-checkpointer = PostgresSaver(db_pool)
+# Explicitly allow only our trusted domain models and enums
+# to be reconstructed from persisted LangGraph checkpoints.
+checkpoint_serializer = JsonPlusSerializer(
+    allowed_msgpack_modules=[
+        RequestIntent,
+        TravelCapability,
+        TravelRequest,
+        RequestCheck,
+        BudgetScope,
+        TripContext,
+        ReadinessIssue,
+        TripReadiness,
+    ],
+    # Never fall back to Python pickle deserialization.
+    pickle_fallback=False,
+)
+
+# Keep the existing Neon connection pool and checkpointing.
+checkpointer = PostgresSaver(
+    db_pool,
+    serde=checkpoint_serializer,
+)
 
 travel_graph = graph.compile(
     checkpointer=checkpointer,
@@ -290,19 +363,6 @@ travel_graph = graph.compile(
 # =========================================================
 # Graph execution helpers
 # =========================================================
-
-
-def _has_pending_interrupt(config: dict) -> bool:
-    """
-    Check whether the current thread is waiting for
-    clarification from the user.
-    """
-
-    # Get the current state of the graph.
-    snapshot = travel_graph.get_state(config)
-
-    # Return True if bool(x) is True for any x in the iterable.
-    return any(task.interrupts for task in snapshot.tasks)
 
 
 def _get_interrupt_question(
@@ -336,50 +396,67 @@ def _get_interrupt_question(
 
 
 def run_travel_agent(
-    user_input: str,
+    user_input: str | None = None,
     thread_id: str | None = None,
+    *,
+    action: SessionAction,
 ) -> dict:
     """
-    Start a new planning session or resume a workflow
-    that is waiting for clarification.
+    Execute an explicit session action.
 
-    Thread lifecycle:
-    - Independent request -> new thread.
-    - Clarification required -> keep the thread.
-    - Clarification response -> resume the same thread.
-    - Completed workflow -> thread is considered closed.
+    START  -> always create a new LangGraph thread.
+    REPLY  -> resume only an interrupted, active thread.
+    CANCEL -> persist cancellation without executing research.
     """
 
-    result: dict
-    active_thread_id: str
+    # --------------------------------------------------
+    # 1. Cancel existing planning session
+    # --------------------------------------------------
+    if action == SessionAction.CANCEL:
+        if thread_id is None:
+            raise ValueError("Cancel requires a thread_id.")
 
-    # -----------------------------------------------------
-    # Resume only if this thread is actually interrupted.
-    # -----------------------------------------------------
-    if thread_id:
-        resume_config = {
-            "configurable": {
-                "thread_id": thread_id,
-            }
+        # Persist cancellation without running any graph nodes.
+        cancel_pending_session(
+            travel_graph,
+            thread_id,
+        )
+
+        return {
+            "status": "cancelled",
+            "thread_id": thread_id,
+            "answer": "Trip planning cancelled.",
         }
 
-        if _has_pending_interrupt(resume_config):
-            active_thread_id = thread_id
+    # --------------------------------------------------
+    # 2. Resume an existing clarification
+    # --------------------------------------------------
+    if action == SessionAction.REPLY:
+        if thread_id is None or user_input is None:
+            raise ValueError("Reply requires message and thread_id.")
 
-            result = travel_graph.invoke(
-                Command(resume=user_input),
-                config=resume_config,
-            )
+        # A stale, completed or cancelled thread raises 409
+        # through SessionConflictError at the API boundary.
+        config = require_pending_session(
+            travel_graph,
+            thread_id,
+        )
 
-        else:
-            # The thread is completed, stale, or unknown.
-            # Never reuse it for a new independent request.
-            thread_id = None
+        active_thread_id = thread_id
 
-    # -----------------------------------------------------
-    # No resumable thread -> start a new planning session.
-    # -----------------------------------------------------
-    if not thread_id:
+        result = travel_graph.invoke(
+            Command(resume=user_input),
+            config=config,
+        )
+
+    # --------------------------------------------------
+    # 3. Start a completely independent trip
+    # --------------------------------------------------
+    elif action == SessionAction.START:
+        if user_input is None or thread_id is not None:
+            raise ValueError("Invalid new trip request.")
+        
+        # Each new trip gets an independent checkpoint thread.
         active_thread_id = f"trip_{uuid.uuid4().hex}"
 
         config = {
@@ -388,28 +465,42 @@ def run_travel_agent(
             }
         }
 
+        # Initialize all state required by the current workflow.
         initial_state: TravelState = {
-        "messages": [HumanMessage(content=user_input)],
-        "user_query": user_input,
-
-        # Start each independent trip with its own context.
-        "trip_context": TripContext(),
-
-        "parsed_request": None,
-        "request_check": None,
-
-        "flight_results": "",
-        "hotel_results": "",
-        "activity_results": "",
-
-        "itinerary": "",
-        "final_answer": "",
-    }
+            "messages": [HumanMessage(content=user_input)],
+            "user_query": user_input,
+            
+            # Conversational trip context
+            "trip_context": TripContext(),
+            
+            # Readiness and clarification
+            "trip_readiness": None,
+            "pending_question": None,
+            
+            # Session lifecycle
+            "session_cancelled": False,
+            
+            # Existing execution request and validation.
+            "parsed_request": None,
+            "request_check": None,
+            
+            # Results from external travel services.
+            "flight_results": "",
+            "hotel_results": "",
+            "activity_results": "",
+            
+            # Generated outputs.
+            "itinerary": "",
+            "final_answer": "",
+        }
 
         result = travel_graph.invoke(
             initial_state,
             config=config,
         )
+
+    else:
+        raise ValueError(f"Unsupported session action: {action}")
 
     # -----------------------------------------------------
     # The graph paused and needs user clarification.

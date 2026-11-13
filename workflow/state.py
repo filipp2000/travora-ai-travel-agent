@@ -8,13 +8,23 @@ from pydantic_models.travel_request import (
     TravelRequest,
 )
 from pydantic_models.trip_context import TripContext
+from pydantic_models.trip_readiness import TripReadiness
 
 
 class TravelState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]
+    # Persistent marker used by the API to reject planning session
+    session_cancelled: bool
 
     # Accumulated planning data for the current trip.
     trip_context: TripContext | None
+    # Deterministic completeness assessment of that context.
+    trip_readiness: TripReadiness | None
+
+    # Last question asked during the collection phase.
+    # Helps interpret user replies
+    pending_question: str | None
+
     user_query: str
 
     parsed_request: TravelRequest | None

@@ -1,3 +1,5 @@
+from datetime import date
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
     HumanMessage,
@@ -11,11 +13,16 @@ from pydantic_models.trip_context import (
     TripContext,
     TripContextUpdate,
 )
+from pydantic_models.trip_readiness import TripReadiness
 from services.request_policy import apply_request_policy
 from services.request_validation import check_request
 from services.trip_context_service import (
     merge_trip_context,
     to_travel_request,
+)
+from services.trip_readiness_service import (
+    assess_trip_readiness,
+    build_targeted_question,
 )
 from tools.flight_tool import search_flights_by_route
 from tools.tavily_tool import tavily_search
@@ -44,58 +51,128 @@ def scope_response_node(state: TravelState) -> dict:
     return {"final_answer": answer}
 
 
-# Request understanding node
-
-
 def understand_request_node(
     state: TravelState,
     *,
     llm: BaseChatModel,
 ) -> dict:
     """
-    Extract one user turn and update the accumulated trip context.
+    Interpret the latest user turn and update the stored TripContext.
 
-    The existing execution workflow continues to consume TravelRequest.
+    The same node handles both:
+    - initial travel requests
+    - answers to previous clarification questions
     """
 
-    # Use existing trip information if available.
-    # A new planning session starts with an empty context.
-    current_context = state.get("trip_context") or TripContext()
+    # Restore the current context from LangGraph state.
+    # model_validate accepts both a TripContext and a dictionary.
+    current_context = TripContext.model_validate(state.get("trip_context") or {})
 
+    # Extract the current turn in the context of what we
+    # already know and what we previously asked.
     turn = extract_trip_turn(
         latest_message=state["user_query"],
         current_context=current_context,
+        pending_question=state.get("pending_question"),
         llm=llm,
     )
 
-    # Do not merge unrelated information into an existing trip.
-    if turn.intent != RequestIntent.TRAVEL:
-        return {
-            "trip_context": current_context,
-            "parsed_request": to_travel_request(
-                current_context,
-                intent=turn.intent,
-            ),
-        }
+    if turn.intent == RequestIntent.TRAVEL:
+        # Apply updates deterministically without losing previous content.
+        updated_context = merge_trip_context(
+            current_context,
+            turn.update,
+        )
+    else:
+        # Do not modify trip data using an out-of-scope message.
+        updated_context = current_context
 
-    # Deterministic merge preserves previously collected information.
-    updated_context = merge_trip_context(
-        current_context,
-        turn.update,
-    )
-
-    # Adapt the accumulated context for the existing execution nodes.
+    # Existing execution nodes still consume TravelRequest.
     execution_request = to_travel_request(
         updated_context,
         intent=turn.intent,
     )
 
-    # Retain our deterministic end-to-end trip policy.
     normalized_request = apply_request_policy(execution_request)
 
     return {
         "trip_context": updated_context,
         "parsed_request": normalized_request,
+    }
+
+
+def assess_trip_readiness_node(
+    state: TravelState,
+    *,
+    today: date | None = None,
+) -> dict:
+    """
+    Check whether the accumulated trip context is ready.
+
+    No LLM calls or external API calls happen here.
+    """
+
+    context = TripContext.model_validate(state.get("trip_context") or {})
+
+    # Inject a fixed date in tests for deterministic results.
+    reference_date = today if today is not None else date.today()
+
+    readiness = assess_trip_readiness(
+        context,
+        today=reference_date,
+    )
+
+    return {
+        "trip_readiness": readiness,
+        # The previous question has now been processed.
+        # A new one will be generated if details are missing.
+        "pending_question": None,
+    }
+
+
+def ask_trip_details_node(
+    state: TravelState,
+) -> dict:
+    """
+    Pause for clarification and hand the next user message
+    back to request understanding.
+
+    Everything before interrupt() must be safe to re-run.
+    """
+
+    readiness = TripReadiness.model_validate(state["trip_readiness"])
+
+    question = build_targeted_question(readiness)
+
+    if question is None:
+        raise ValueError("Cannot request trip details when context is ready.")
+
+    # Persist the current graph execution and ask the user
+    # for the missing information.
+    #
+    # On resume, this call returns the user's reply.
+    answer = interrupt(
+        {
+            "type": "trip_details",
+            "question": question,
+            "issues": [issue.value for issue in readiness.issues],
+        }
+    )
+
+    # API validation requires a non-empty user message.
+    if not isinstance(answer, str) or not answer.strip():
+        raise ValueError("A non-empty clarification response is required.")
+
+    user_reply = answer.strip()
+
+    return {
+        # The next understand_request invocation will parse
+        # the clarification as the latest conversational turn.
+        "user_query": user_reply,
+        # Supply the question that this reply is answering.
+        "pending_question": question,
+        # Add the new user message to LangGraph conversation history.
+        "messages": [HumanMessage(content=user_reply)],
     }
 
 

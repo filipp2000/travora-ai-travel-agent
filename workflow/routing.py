@@ -1,4 +1,5 @@
 from pydantic_models.travel_request import RequestIntent, TravelCapability
+from pydantic_models.trip_readiness import TripReadiness
 from workflow.state import TravelState
 
 
@@ -63,12 +64,44 @@ def route_after_research(
 def route_after_understanding(
     state: TravelState,
 ) -> str:
+    """
+    Decide whether to continue collecting trip information
+    or reject a new out-of-scope request.
+    """
+
     request = state.get("parsed_request")
 
     if request is None:
         raise ValueError("Parsed request is missing.")
 
-    if request.intent != RequestIntent.TRAVEL or not request.capabilities:
+    if request.intent != RequestIntent.TRAVEL:
+        # During an existing clarification, unrelated messages
+        # must not be merged or interpreted as destinations.
+        # Reassess the unchanged context and ask again.
+        if state.get("pending_question"):
+            return "assess_trip_readiness"
+
+        # Independent out-of-scope requests use the existing guardrail.
         return "scope_response"
+
+    # Even requests with zero extracted capabilities reach readiness,
+    # where missing_capability generates a targeted question.
+    return "assess_trip_readiness"
+
+
+def route_after_readiness(
+    state: TravelState,
+) -> str:
+    """
+    Continue to execution validation only when the
+    accumulated trip context has passed readiness checks.
+    """
+
+    readiness = TripReadiness.model_validate(
+        state["trip_readiness"]
+    )
+
+    if not readiness.ready:
+        return "ask_trip_details"
 
     return "check_request"

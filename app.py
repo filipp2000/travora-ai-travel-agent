@@ -1,3 +1,4 @@
+import logging
 import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,6 +16,10 @@ from backend import (
     run_travel_agent,
 )
 from pydantic_models.api_request import TravelRequestBody
+from services.session_lifecycle import SessionConflictError
+
+logger = logging.getLogger(__name__)
+
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -73,17 +78,11 @@ async def home(request: Request):
 @app.post("/api/travel")
 async def travel_planner(request_data: TravelRequestBody):
     try:
-        user_message = request_data.message.strip()
-
-        if not user_message:
-            return JSONResponse(
-                status_code=400,
-                content={"success": False, "error": "Message cannot be empty."},
-            )
-
-        # Hand off the validated request to the LangGraph workflow.
+        # Request validation is handled by TravelRequestBody.
         result = run_travel_agent(
-            user_input=user_message, thread_id=request_data.thread_id
+            user_input=request_data.message,
+            thread_id=request_data.thread_id,
+            action=request_data.action,
         )
 
         # Return plain application data back to the client as JSON.
@@ -102,16 +101,30 @@ async def travel_planner(request_data: TravelRequestBody):
             }
         )
 
-    # TODO: Exception handling returns raw exceptions on client side. This is not ideal for production. Consider logging the error and returning a generic error message instead.
-    except Exception as e:
-        print("ERROR:", e)
-        traceback.print_exc()
+    except SessionConflictError as exc:
+        # Unknown, completed or cancelled threads
+        # cannot receive clarification replies.
+        return JSONResponse(
+            status_code=409,
+            content={
+                "success": False,
+                "error": str(exc),
+            },
+        )
+
+    except Exception:
+        # Keep error details in server logs,
+        # not in API response.
+        logger.exception("Travel request failed")
 
         return JSONResponse(
-            status_code=500, content={"success": False, "error": str(e)}
-       )
+            status_code=500,
+            content={
+                "success": False,
+                "error": ("An unexpected error occurred. Please try again."),
+            },
+        )
 
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
-    
