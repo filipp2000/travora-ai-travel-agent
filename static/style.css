@@ -919,3 +919,39 @@ footer span:first-child {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* Temporary HITL confirmation controls for Increment 1E. */
+.trip-brief-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+}
+
+.trip-brief-actions.hidden {
+    display: none;
+}
+
+.trip-brief-actions button {
+    padding: 0.75rem 1.1rem;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 0.75rem;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+#buildPlanBtn {
+    color: white;
+    background: #6845e8;
+}
+
+#editBriefBtn {
+    color: #e2e8f0;
+    background: #182238;
+}
+
+.trip-brief-actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

@@ -174,6 +174,25 @@
                 <div id="resultBox" class="result-box"></div>
             </div>
 
+            <!-- Shown only while the graph waits for trip confirmation. -->
+            <div id="tripBriefActions" class="trip-brief-actions hidden">
+                <button
+                    type="button"
+                    id="editBriefBtn"
+                    onclick="editTripBrief()"
+                >
+                    Edit details
+                </button>
+
+                <button
+                    type="button"
+                    id="buildPlanBtn"
+                    onclick="buildPlan()"
+                >
+                    Build Plan
+                </button>
+            </div>
+
         </section>
 
     </main>

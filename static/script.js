@@ -5,6 +5,11 @@ let pendingThreadId =
         "pending_travel_thread_id"
     ) || null;
 
+// Keep track of what kind of input the pending thread expects.
+let pendingStatus =
+    localStorage.getItem("pending_travel_status")
+    || (pendingThreadId ? "requires_input" : null);
+
 let latestAnswerMarkdown = "";
 
 // Clean up the legacy behavior where every request
@@ -17,17 +22,31 @@ function setPrompt(text) {
     document.getElementById("userInput").value = text;
 }
 
+
 function setLoading(isLoading) {
-    const sendBtn = document.getElementById("sendBtn");
     const btnText = document.getElementById("btnText");
     const btnLoader = document.getElementById("btnLoader");
 
-    sendBtn.disabled = isLoading;
+    // Disable all action buttons while a request is running
+    // to prevent competing session actions or duplicate requests.
+    const actionButtonIds = [
+        "sendBtn",
+        "newTripBtn",
+        "cancelTripBtn",
+        "buildPlanBtn",
+        "editBriefBtn"
+    ];
 
-    // Prevent competing session actions while a request is running.
-    document.getElementById("newTripBtn").disabled = isLoading;
-    document.getElementById("cancelTripBtn").disabled = isLoading;
+    for (const id of actionButtonIds) {
+        const button = document.getElementById(id);
 
+        // Safely handle buttons that may not exist in the current UI.
+        if (button) {
+            button.disabled = isLoading;
+        }
+    }
+
+    // Toggle the loading indicator on the main submit button.
     if (isLoading) {
         btnText.classList.add("hidden");
         btnLoader.classList.remove("hidden");
@@ -36,6 +55,7 @@ function setLoading(isLoading) {
         btnLoader.classList.add("hidden");
     }
 }
+
 
 function showError(message) {
     const errorBox = document.getElementById("errorBox");
@@ -77,110 +97,45 @@ function showResult(answer, threadId) {
 
 
 async function sendMessage() {
-    // Prevent duplicate requests while an API call is running.
+    const input = document.getElementById("userInput");
     const sendBtn = document.getElementById("sendBtn");
 
     if (sendBtn.disabled) {
         return;
     }
 
-    hideError();
-
-    const input = document.getElementById("userInput");
     const message = input.value.trim();
 
     if (!message) {
-        showError("Please enter your travel request first.");
+        showError("Please enter your travel request.");
         return;
     }
 
-    // A pending thread means the user is answering a
-    // clarification. Otherwise, this is a new trip.
-    const action = pendingThreadId ? "reply" : "start";
+    hideError();
+
+    // ---------------------------------------------
+    // Choose the action using explicit session phase.
+    // ---------------------------------------------
+    let action = "start";
+
+    if (pendingThreadId) {
+        action = pendingStatus === "requires_confirmation"
+            ? "edit"
+            : "reply";
+    }
 
     setLoading(true);
 
     try {
-        const response = await fetch("/api/travel", {
-            method: "POST",
-
-            headers: {
-                "Content-Type": "application/json"
-            },
-
-            body: JSON.stringify({
-                action: action,
-                message: message,
-
-                // START sends null; REPLY sends the existing ID.
-                thread_id: pendingThreadId
-            })
+        const data = await postTravelAction({
+            action: action,
+            message: message,
+            thread_id: pendingThreadId
         });
 
-        const data = await response.json();
+        handleTravelResponse(data);
 
-        // ---------------------------------------------
-        // 409 Conflict: the session can no longer resume.
-        // ---------------------------------------------
-        if (response.status === 409) {
-            // Clear the stale client reference.
-            // Never retry this message automatically as START.
-            clearPendingThread();
-
-            throw new Error(
-                data.error ||
-                "This trip session is no longer active. Please start a new trip."
-            );
-        }
-
-        // ---------------------------------------------
-        // Handle other API errors.
-        // ---------------------------------------------
-        if (!response.ok || !data.success) {
-            throw new Error(
-                data.error || "Something went wrong."
-            );
-        }
-
-        // ---------------------------------------------
-        // LangGraph is waiting for clarification.
-        // ---------------------------------------------
-        if (data.status === "requires_input") {
-            // Preserve the same thread for the next message.
-            pendingThreadId = data.thread_id;
-
-            localStorage.setItem(
-                "pending_travel_thread_id",
-                pendingThreadId
-            );
-
-            syncSessionControls();
-        }
-
-        // ---------------------------------------------
-        // Travel workflow has completed.
-        // ---------------------------------------------
-        else if (data.status === "completed") {
-            // Completed threads should not be resumed.
-            clearPendingThread();
-        }
-
-        // ---------------------------------------------
-        // Unexpected successful status.
-        // ---------------------------------------------
-        else {
-            throw new Error(
-                `Unexpected workflow status: ${data.status}`
-            );
-        }
-
-        // Display the clarification question or final plan.
-        showResult(
-            data.answer,
-            data.thread_id
-        );
-
-        // Clear the submitted message after successful handling.
+        // Clear text only after successful processing.
         input.value = "";
 
     } catch (error) {
@@ -197,8 +152,11 @@ async function sendMessage() {
 function clearPendingThread() {
     // Clear both in-memory and browser-persisted session state.
     pendingThreadId = null;
+    pendingStatus = null;
 
+    // Both identifiers must be cleared together.
     localStorage.removeItem("pending_travel_thread_id");
+    localStorage.removeItem("pending_travel_status");
 
     syncSessionControls();
 }
@@ -369,3 +327,227 @@ async function cancelTrip() {
 
 // Initialize button visibility after the DOM has loaded.
 syncSessionControls();
+
+
+function rememberPendingSession(threadId, status) {
+    pendingThreadId = threadId;
+    pendingStatus = status;
+
+    // Restore the correct action after a browser refresh.
+    localStorage.setItem("pending_travel_thread_id", threadId);
+    localStorage.setItem("pending_travel_status", status);
+
+    syncSessionControls();
+}
+
+
+function showPrePlanMessage(text, threadId) {
+    // Intermediate responses are not completed travel plans.
+    latestAnswerMarkdown = "";
+
+    const section = document.getElementById("resultSection");
+    const resultBox = document.getElementById("resultBox");
+    const threadInfo = document.getElementById("threadInfo");
+
+    // Use textContent: no user-provided trip field is parsed as HTML.
+    resultBox.textContent = text;
+    resultBox.style.whiteSpace = "pre-line";
+
+    threadInfo.textContent = `Thread ID: ${threadId}`;
+
+    // Copy/PDF are intended for completed plans.
+    document.querySelector(".result-actions")
+        .classList.add("hidden");
+
+    document.getElementById("tripBriefActions")
+        .classList.add("hidden");
+
+    section.classList.remove("hidden");
+}
+
+
+function showTripBrief(brief, threadId) {
+    const budget = brief.budget;
+
+    const budgetLabel = budget
+        ? `${budget.amount} ${budget.currency} (${budget.scope})`
+        : "Not specified";
+
+    const lines = [
+        "TRIP BRIEF",
+        "",
+        `Destination: ${brief.destination || "Not specified"}`,
+        `Origin: ${brief.origin || "Not specified"}`,
+        `Duration: ${brief.duration_days ?? "Not specified"} days`,
+        `Travel period: ${brief.travel_period || "Not specified"}`,
+        `Travelers: ${brief.travelers ?? "Not specified"}`,
+        `Budget: ${budgetLabel}`,
+        `Preferences: ${brief.preferences.join(", ") || "None specified"}`,
+        `Research: ${brief.capabilities.join(", ")}`,
+        "",
+        "Review the details before generating your plan."
+    ];
+
+    showPrePlanMessage(
+        lines.join("\n"),
+        threadId
+    );
+
+    document.getElementById("tripBriefActions")
+        .classList.remove("hidden");
+
+    document.getElementById("resultSection").scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+    });
+}
+
+
+
+function handleTravelResponse(data) {
+
+    // ---------------------------------------------
+    // More travel information is required.
+    // ---------------------------------------------
+    if (data.status === "requires_input") {
+        rememberPendingSession(
+            data.thread_id,
+            data.status
+        );
+
+        showPrePlanMessage(
+            data.answer,
+            data.thread_id
+        );
+
+        return;
+    }
+
+    // ---------------------------------------------
+    // Trip context is ready, but not approved yet.
+    // ---------------------------------------------
+    if (data.status === "requires_confirmation") {
+        if (!data.brief) {
+            throw new Error("Trip brief is missing from the response.");
+        }
+
+        rememberPendingSession(
+            data.thread_id,
+            data.status
+        );
+
+        showTripBrief(
+            data.brief,
+            data.thread_id
+        );
+
+        return;
+    }
+
+    // ---------------------------------------------
+    // User approved and generation completed.
+    // ---------------------------------------------
+    if (data.status === "completed") {
+        clearPendingThread();
+
+        document.getElementById("tripBriefActions")
+            .classList.add("hidden");
+
+        document.querySelector(".result-actions")
+            .classList.remove("hidden");
+
+        document.getElementById("resultBox")
+            .style.whiteSpace = "";
+
+        // Reuse the existing final-result renderer.
+        showResult(
+            data.answer,
+            data.thread_id
+        );
+
+        return;
+    }
+
+    throw new Error(
+        `Unexpected workflow status: ${data.status}`
+    );
+}
+
+
+async function postTravelAction(payload) {
+    const response = await fetch("/api/travel", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+
+    if (response.status === 409) {
+        // An invalid/stale session must not be silently resumed.
+        clearPendingThread();
+    }
+
+    if (!response.ok || !data.success) {
+        throw new Error(
+            data.error || "Unable to process the travel request."
+        );
+    }
+
+    return data;
+}
+
+
+async function buildPlan() {
+    // BUILD is valid only at the confirmation stage.
+    if (
+        !pendingThreadId ||
+        pendingStatus !== "requires_confirmation"
+    ) {
+        showError("No trip is awaiting confirmation.");
+        return;
+    }
+
+    hideError();
+    setLoading(true);
+
+    try {
+        const data = await postTravelAction({
+            action: "build",
+            thread_id: pendingThreadId
+        });
+
+        // This may return completed, or requires_input
+        // if a later execution validation needs clarification.
+        handleTravelResponse(data);
+
+    } catch (error) {
+        showError(
+            error.message || "Unable to build the plan."
+        );
+
+    } finally {
+        setLoading(false);
+    }
+}
+
+
+function editTripBrief() {
+    if (pendingStatus !== "requires_confirmation") {
+        return;
+    }
+
+    const input = document.getElementById("userInput");
+
+    // The next textarea submission will use action="edit".
+    input.placeholder =
+        "Tell me what you want to change in your trip...";
+
+    input.focus();
+    input.scrollIntoView({
+        behavior: "smooth",
+        block: "center"
+    });
+}
