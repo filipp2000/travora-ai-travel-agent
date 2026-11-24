@@ -1,4 +1,3 @@
-
 from typing import Any
 
 
@@ -17,15 +16,14 @@ def _thread_config(thread_id: str) -> dict:
 def _is_pending(snapshot: Any) -> bool:
     """Check whether the checkpoint is waiting for user input."""
 
-    return any(
-        task.interrupts
-        for task in snapshot.tasks
-    )
+    return any(task.interrupts for task in snapshot.tasks)
 
 
 def require_pending_session(
     graph: Any,
     thread_id: str,
+    *,
+    expected_interrupt_types: tuple[str, ...] | None = None,
 ) -> dict:
     """
     Validate that a thread can receive a clarification reply.
@@ -43,9 +41,24 @@ def require_pending_session(
         or not _is_pending(snapshot)
     ):
         raise SessionConflictError(
-            "This trip is no longer waiting for a reply. "
-            "Please start a new trip."
+            "This trip is no longer waiting for a reply. Please start a new trip."
         )
+
+    # Verify that the requested API action matches the
+    # actual interrupted node, not just the thread ID.
+    # so a user cannot reply to a trip brief when the workflow is waiting for a clarification.
+    if expected_interrupt_types is not None:
+        active_types = set()
+
+        for task in snapshot.tasks:
+            for item in task.interrupts:
+                payload = getattr(item, "value", None)
+
+                if isinstance(payload, dict):
+                    active_types.add(payload.get("type"))
+
+        if not active_types.intersection(expected_interrupt_types):
+            raise SessionConflictError("This trip is waiting for a different action.")
 
     return config
 
@@ -64,9 +77,7 @@ def cancel_pending_session(
     snapshot = graph.get_state(config)
 
     if not snapshot.values:
-        raise SessionConflictError(
-            "Trip session was not found."
-        )
+        raise SessionConflictError("Trip session was not found.")
 
     # Repeated cancellation is safe and idempotent.
     if snapshot.values.get("session_cancelled", False):

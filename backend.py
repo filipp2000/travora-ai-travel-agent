@@ -40,10 +40,12 @@ from workflow.nodes import (
     generate_response_node,
     hotel_node,
     join_services_node,
+    present_trip_brief_node,
     scope_response_node,
     understand_request_node,
 )
 from workflow.routing import (
+    route_after_brief_decision,
     route_after_check,
     route_after_readiness,
     route_after_understanding,
@@ -188,8 +190,14 @@ graph.add_node(
 
 
 # ---------------------------------------------------------
-# Response node
+# Brief and final Response node
 # ---------------------------------------------------------
+
+# Human confirmation gate between readiness and execution.
+graph.add_node(
+    "present_trip_brief",
+    present_trip_brief_node,
+)
 
 graph.add_node(
     "generate_response_node",
@@ -218,12 +226,21 @@ graph.add_conditional_edges(
     ],
 )
 
-# Decide whether to ask for information or continue execution.
+# Decide whether to ask for information or continue to trip brief.
 graph.add_conditional_edges(
     "assess_trip_readiness",
     route_after_readiness,
     [
         "ask_trip_details",
+        "present_trip_brief",
+    ],
+)
+
+graph.add_conditional_edges(
+    "present_trip_brief",
+    route_after_brief_decision,
+    [
+        "understand_request",
         "check_request",
     ],
 )
@@ -365,12 +382,13 @@ travel_graph = graph.compile(
 # =========================================================
 
 
-def _get_interrupt_question(
+def _get_interrupt_payload(
     result: dict,
-) -> str | None:
+) -> dict | None:
     """
-    Extract the clarification question returned by
-    LangGraph's interrupt() mechanism.
+    Extract the full interrupt payload from LangGraph.
+
+    Supports both trip-details and trip-brief interrupts.
     """
 
     interrupts = result.get("__interrupt__", ())
@@ -378,16 +396,20 @@ def _get_interrupt_question(
     if not interrupts:
         return None
 
-    interrupt_value = getattr(
+    value = getattr(
         interrupts[0],
         "value",
         interrupts[0],
     )
 
-    if isinstance(interrupt_value, dict):
-        return interrupt_value.get("question")
+    if isinstance(value, dict):
+        return value
 
-    return str(interrupt_value)
+    # Compatibility for interrupts that only return text.
+    return {
+        "type": "clarification",
+        "question": str(value),
+    }
 
 
 # =========================================================
@@ -431,21 +453,67 @@ def run_travel_agent(
     # --------------------------------------------------
     # 2. Resume an existing clarification
     # --------------------------------------------------
-    if action == SessionAction.REPLY:
-        if thread_id is None or user_input is None:
-            raise ValueError("Reply requires message and thread_id.")
 
-        # A stale, completed or cancelled thread raises 409
-        # through SessionConflictError at the API boundary.
+    elif action in {
+        SessionAction.REPLY,
+        SessionAction.EDIT,
+        SessionAction.BUILD,
+    }:
+        if thread_id is None:
+            raise ValueError("This session action requires a thread_id.")
+
+        # -------------------------------------------------
+        # Normal clarification reply.
+        # -------------------------------------------------
+        if action == SessionAction.REPLY:
+            if user_input is None:
+                raise ValueError("Reply requires a message.")
+
+            expected_types = (
+                "trip_details",
+                "clarification",
+            )
+
+            # Existing clarification nodes expect a string.
+            resume_value = user_input
+
+        # -------------------------------------------------
+        # Edit an existing trip brief.
+        # -------------------------------------------------
+        elif action == SessionAction.EDIT:
+            if user_input is None:
+                raise ValueError("Edit requires a message.")
+
+            expected_types = ("trip_brief",)
+
+            resume_value = {
+                "action": "edit",
+                "message": user_input,
+            }
+
+        # -------------------------------------------------
+        # Explicitly approve the current trip brief.
+        # -------------------------------------------------
+        else:
+            expected_types = ("trip_brief",)
+
+            # No user message or LLM interpretation needed.
+            resume_value = {
+                "action": "build",
+            }
+
+        # Reject invalid transitions before graph execution.
         config = require_pending_session(
             travel_graph,
             thread_id,
+            expected_interrupt_types=expected_types,
         )
 
         active_thread_id = thread_id
 
+        # Resume exactly the node waiting in this session.
         result = travel_graph.invoke(
-            Command(resume=user_input),
+            Command(resume=resume_value),
             config=config,
         )
 
@@ -455,7 +523,7 @@ def run_travel_agent(
     elif action == SessionAction.START:
         if user_input is None or thread_id is not None:
             raise ValueError("Invalid new trip request.")
-        
+
         # Each new trip gets an independent checkpoint thread.
         active_thread_id = f"trip_{uuid.uuid4().hex}"
 
@@ -469,26 +537,20 @@ def run_travel_agent(
         initial_state: TravelState = {
             "messages": [HumanMessage(content=user_input)],
             "user_query": user_input,
-            
             # Conversational trip context
             "trip_context": TripContext(),
-            
             # Readiness and clarification
             "trip_readiness": None,
             "pending_question": None,
-            
             # Session lifecycle
             "session_cancelled": False,
-            
             # Existing execution request and validation.
             "parsed_request": None,
             "request_check": None,
-            
             # Results from external travel services.
             "flight_results": "",
             "hotel_results": "",
             "activity_results": "",
-            
             # Generated outputs.
             "itinerary": "",
             "final_answer": "",
@@ -503,32 +565,44 @@ def run_travel_agent(
         raise ValueError(f"Unsupported session action: {action}")
 
     # -----------------------------------------------------
-    # The graph paused and needs user clarification.
+    # The graph paused to Handle clarification or trip brief interruption.
     # -----------------------------------------------------
-    clarification_question = _get_interrupt_question(result)
+    interrupt_payload = _get_interrupt_payload(result)
 
-    if clarification_question:
+    if interrupt_payload is not None:
+        is_confirmation = (
+            interrupt_payload.get("type") == "trip_brief"
+        )
+
         return {
-            "status": "requires_input",
-            # The frontend must preserve this ID
-            # until the clarification is answered.
+            "status": (
+                "requires_confirmation"
+                if is_confirmation
+                else "requires_input"
+            ),
             "thread_id": active_thread_id,
-            "answer": clarification_question,
+            "answer": interrupt_payload.get(
+                "question", ""
+            ),
+
+            # Included only at the trip brief gate.
+            "brief": (
+                interrupt_payload.get("brief")
+                if is_confirmation
+                else None
+            ),
+
             "flight_results": result.get(
-                "flight_results",
-                "",
+                "flight_results", ""
             ),
             "hotel_results": result.get(
-                "hotel_results",
-                "",
+                "hotel_results", ""
             ),
             "activity_results": result.get(
-                "activity_results",
-                "",
+                "activity_results", ""
             ),
             "itinerary": result.get(
-                "itinerary",
-                "",
+                "itinerary", ""
             ),
         }
 

@@ -16,6 +16,7 @@ from pydantic_models.trip_context import (
 from pydantic_models.trip_readiness import TripReadiness
 from services.request_policy import apply_request_policy
 from services.request_validation import check_request
+from services.trip_brief_service import build_trip_brief
 from services.trip_context_service import (
     merge_trip_context,
     to_travel_request,
@@ -174,6 +175,99 @@ def ask_trip_details_node(
         # Add the new user message to LangGraph conversation history.
         "messages": [HumanMessage(content=user_reply)],
     }
+
+
+
+def present_trip_brief_node(
+    state: TravelState,
+) -> dict:
+    """
+    Present the accumulated trip context for human approval.
+
+    BUILD -> continue to execution validation.
+    EDIT  -> return to conversational understanding.
+    """
+
+    context = TripContext.model_validate(
+        state.get("trip_context") or {}
+    )
+
+    request = state.get("parsed_request")
+
+    if request is None:
+        raise ValueError(
+            "Trip request is missing before confirmation."
+        )
+
+    # The brief is reconstructed deterministically.
+    # This is safe because LangGraph re-executes the node on resume.
+    brief = build_trip_brief(
+        context=context,
+        request=request,
+    )
+
+    # Pause before ANY external travel research.
+    decision = interrupt(
+        {
+            "type": "trip_brief",
+            "question": (
+                "Please review your trip details. "
+                "Build the plan or edit any information."
+            ),
+            "brief": brief,
+        }
+    )
+
+    if not isinstance(decision, dict):
+        raise TypeError(
+            "Trip brief decision must be an object."
+        )
+
+    action = decision.get("action")
+
+    # -------------------------------------------------
+    # User explicitly approves the plan.
+    # -------------------------------------------------
+    if action == "build":
+        return {
+            "brief_decision": "build",
+            "pending_question": None,
+        }
+
+    # -------------------------------------------------
+    # User wants to modify existing trip information.
+    # -------------------------------------------------
+    if action == "edit":
+        message = decision.get("message")
+
+        if not isinstance(message, str) or not message.strip():
+            raise ValueError(
+                "Editing trip details requires a message."
+            )
+
+        message = message.strip()
+
+        return {
+            "brief_decision": "edit",
+
+            # Reuse our existing TripTurn parser.
+            # No second extraction implementation is needed.
+            "user_query": message,
+
+            # The parser knows this is an edit to the current trip.
+            "pending_question": (
+                "The user is updating the existing trip brief."
+            ),
+
+            # Preserve conversation history for tracing.
+            "messages": [
+                HumanMessage(content=message)
+            ],
+        }
+
+    raise ValueError(
+        f"Unsupported trip brief action: {action}"
+    )
 
 
 # Request validation node

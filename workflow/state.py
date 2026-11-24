@@ -35,4 +35,9 @@ class TravelState(TypedDict, total=False):
     activity_results: str
 
     itinerary: str
+    
+    # The most recent decision from the trip brief interrupt.
+    # Used only to route after the user resumes the workflow.
+    brief_decision: str | None
+    
     final_answer: str

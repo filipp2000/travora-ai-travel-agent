@@ -24,10 +24,14 @@ ThreadId = Annotated[
     ),
 ]
 
+
 class SessionAction(StrEnum):
     START = "start"
     REPLY = "reply"
     CANCEL = "cancel"
+    # actions for trip brief confirmation.
+    BUILD = "build"
+    EDIT = "edit"
 
 
 # The TravelRequestBody model represents the request body for the API endpoint.
@@ -44,59 +48,49 @@ class TravelRequestBody(BaseModel):
         cls,
         value: str | None,
     ) -> str | None:
+        """Reject unsupported control characters."""
+
+        # BUILD and CANCEL may have no message.
         if value is None:
             return None
 
         if any(
-            (ord(char) < 32 and char not in "\n\t")
-            or ord(char) == 127
+            (ord(char) < 32 and char not in "\n\t") or ord(char) == 127
             for char in value
         ):
-            raise ValueError(
-                "Message contains unsupported control characters."
-            )
+            raise ValueError("Message contains unsupported control characters.")
 
         return value
 
     @model_validator(mode="after")
     def validate_session_action(self):
         """
-        Enforce valid action/message/thread combinations
-        before the request reaches the backend.
+        Validate valid combinations of session action,
+        message and thread_id.
         """
 
-        if self.action in {
-            SessionAction.START,
+        # Only START creates a new independent trip.
+        if self.action == SessionAction.START:
+            if self.message is None or self.thread_id is not None:
+                raise ValueError("START requires a message and no thread_id.")
+
+        # REPLY and EDIT need a message and an existing session.
+        elif self.action in {
             SessionAction.REPLY,
-        } and self.message is None:
+            SessionAction.EDIT,
+        }:
+            if self.message is None or self.thread_id is None:
+                raise ValueError("REPLY and EDIT require message and thread_id.")
+
+        # BUILD and CANCEL are control operations.
+        # They do not accept natural-language user messages.
+        elif self.action in {
+            SessionAction.BUILD,
+            SessionAction.CANCEL,
+        } and (self.thread_id is None or self.message is not None):
             raise ValueError(
-                "A message is required for start and reply."
+                "BUILD and CANCEL require thread_id and must not contain a message."
             )
 
-        if self.action == SessionAction.START:
-            # New trips must not reuse existing thread IDs.
-            if self.thread_id is not None:
-                raise ValueError(
-                    "New trips must not provide a thread_id."
-                )
-
-        elif self.action == SessionAction.REPLY:
-            # A clarification can only target a known thread.
-            if self.thread_id is None:
-                raise ValueError(
-                    "A thread_id is required for reply."
-                )
-
-        elif self.action == SessionAction.CANCEL:
-            if self.thread_id is None:
-                raise ValueError(
-                    "A thread_id is required for cancel."
-                )
-
-            # Cancel is a control operation, not a user message.
-            if self.message is not None:
-                raise ValueError(
-                    "Cancel must not contain a message."
-                )
-
+        # Return the validated model only after all checks.
         return self

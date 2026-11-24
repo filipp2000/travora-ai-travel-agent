@@ -98,6 +98,8 @@ async def travel_planner(request_data: TravelRequestBody):
                 "hotel_results": result.get("hotel_results", ""),
                 "activity_results": result.get("activity_results", ""),
                 "itinerary": result.get("itinerary", ""),
+                # Structured brief is available only at confirmation.
+                "brief": result.get("brief"),
             }
         )
 

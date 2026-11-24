@@ -104,4 +104,28 @@ def route_after_readiness(
     if not readiness.ready:
         return "ask_trip_details"
 
-    return "check_request"
+    # Readiness does not automatically authorize research.
+    return "present_trip_brief"
+
+
+def route_after_brief_decision(
+    state: TravelState,
+) -> str:
+    """
+    Route only after the user has made an explicit
+    decision at the trip brief confirmation gate.
+    """
+
+    decision = state.get("brief_decision")
+
+    if decision == "edit":
+        # Parse the user's corrections as another turn.
+        return "understand_request"
+
+    if decision == "build":
+        # Only explicit approval reaches execution.
+        return "check_request"
+
+    raise ValueError(
+        "Trip brief confirmation decision is missing."
+    )
