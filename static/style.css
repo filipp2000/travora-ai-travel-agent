@@ -955,3 +955,325 @@ footer span:first-child {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+
+/* =========================================================
+   Conversational UI — Increment 1F.1
+   ========================================================= */
+
+
+/* ---------- Application layout ---------- */
+
+.chat-app {
+    width: min(1440px, calc(100% - 40px));
+    padding: 32px 0;
+}
+
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 28px;
+}
+
+.brand-title {
+    font-size: 2.5rem;
+    letter-spacing: -0.045em;
+}
+
+.brand-title span {
+    color: var(--primary-light);
+    margin-left: 8px;
+}
+
+.chat-workspace {
+    display: grid;
+
+    /* Conversation on the left, trip workspace on the right. */
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr);
+
+    gap: 22px;
+    align-items: start;
+}
+
+.chat-panel,
+.trip-panel {
+    min-width: 0;
+    padding: 24px;
+}
+
+
+/* ---------- Conversation panel ---------- */
+
+.chat-panel {
+    display: flex;
+    flex-direction: column;
+    height: min(780px, 80dvh);
+    min-height: 460px;
+}
+
+.chat-header {
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+}
+
+.chat-header h2,
+.trip-panel-header h2 {
+    font-size: 1.3rem;
+}
+
+#sessionStatus {
+    margin-top: 6px;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+.chat-messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 24px 4px;
+
+    scrollbar-width: thin;
+}
+
+
+/* ---------- Chat message bubbles ---------- */
+
+.chat-message {
+    max-width: 90%;
+    padding: 14px 17px;
+    border-radius: 17px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.chat-message.user {
+    align-self: flex-end;
+    background: rgba(99, 102, 241, 0.22);
+    border: 1px solid rgba(129, 140, 248, 0.2);
+}
+
+.chat-message.assistant {
+    align-self: flex-start;
+    background: var(--surface-strong);
+    border: 1px solid var(--border);
+}
+
+.message-label {
+    display: block;
+    margin-bottom: 7px;
+    color: var(--primary-light);
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.message-content {
+    /* Preserve line breaks without interpreting user text as HTML. */
+    white-space: pre-wrap;
+    font-size: 0.95rem;
+}
+
+
+/* ---------- Chat composer ---------- */
+
+#chatForm {
+    flex-shrink: 0;
+    margin-top: 14px;
+}
+
+#chatForm textarea {
+    min-height: 90px;
+    max-height: 180px;
+    padding: 16px;
+}
+
+#chatForm textarea:disabled {
+    opacity: 0.6;
+}
+
+#chatForm #sendBtn {
+    min-width: 100px;
+}
+
+.chat-panel .error-box {
+    margin-top: 10px;
+}
+
+
+/* ---------- Trip panel ---------- */
+
+.trip-panel {
+    min-height: 460px;
+}
+
+.trip-panel-header {
+    margin-bottom: 24px;
+}
+
+.trip-empty-state {
+    padding: 65px 20px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.empty-state-icon {
+    font-size: 3rem;
+    color: var(--primary-light);
+    margin-bottom: 18px;
+}
+
+.trip-empty-state h3 {
+    color: var(--text);
+    margin-bottom: 12px;
+}
+
+.trip-empty-state p {
+    max-width: 330px;
+    margin: 0 auto;
+    line-height: 1.7;
+}
+
+
+/* ---------- Structured trip brief ---------- */
+
+#briefDestination {
+    font-size: 2rem;
+    margin-bottom: 22px;
+}
+
+.brief-details {
+    margin: 0 0 24px;
+}
+
+.brief-row {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 12px;
+
+    padding: 15px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.brief-row dt {
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+}
+
+.brief-row dd {
+    color: var(--text);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.trip-brief-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 24px;
+}
+
+#buildPlanBtn {
+    background: linear-gradient(
+        135deg,
+        var(--primary),
+        #7c3aed
+    );
+    color: white;
+    border: none;
+}
+
+#editBriefBtn,
+#buildPlanBtn {
+    border-radius: 12px;
+    padding: 12px 18px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+#editBriefBtn {
+    background: var(--surface-strong);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+
+/* ---------- Generated result ---------- */
+
+.trip-panel #resultSection {
+    margin: 0;
+    padding: 0;
+}
+
+.trip-panel .result-header {
+    flex-wrap: wrap;
+}
+
+.trip-panel .pdf-content {
+    padding: 24px;
+}
+
+.trip-panel .result-box {
+    overflow-wrap: anywhere;
+}
+
+
+/* ---------- Controls ---------- */
+
+.chat-app button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.chat-app .hidden {
+    display: none !important;
+}
+
+
+/* ---------- Responsive layout ---------- */
+
+@media (max-width: 900px) {
+
+    .chat-workspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .chat-panel {
+        height: 65dvh;
+    }
+
+    .trip-panel {
+        min-height: 300px;
+    }
+
+}
+
+@media (max-width: 600px) {
+
+    .chat-app {
+        width: calc(100% - 24px);
+        padding-top: 20px;
+    }
+
+    .app-header {
+        flex-wrap: wrap;
+    }
+
+    .chat-panel,
+    .trip-panel {
+        padding: 16px;
+    }
+
+    .brief-row {
+        grid-template-columns: 100px minmax(0, 1fr);
+    }
+
+    .trip-brief-actions button {
+        flex: 1;
+    }
+
+}

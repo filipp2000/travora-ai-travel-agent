@@ -17,185 +17,171 @@
         <div class="glow glow-right"></div>
     </div>
 
-    <main class="app-shell">
+    <main class="app-shell chat-app">
 
-        <!-- Hero -->
-        <section class="hero-section">
-            <div class="eyebrow">
-                <span class="eyebrow-icon">✦</span>
-                Travora — A Multi-Agent Travel Planner
+        <!-- Application header and session controls -->
+        <header class="app-header">
+            <div>
+                <p class="section-label">AI TRAVEL PLANNER</p>
+                <h1 class="brand-title">Travora<span>✦</span></h1>
+                <p class="section-description">
+                    Your next journey starts with a conversation.
+                </p>
             </div>
 
-            <h1>
-                Travel planning,
-                <span>powered by AI.</span>
-            </h1>
-
-            <p class="hero-description">
-                Search flights, discover hotels and build a complete itinerary
-                through a coordinated multi-agent workflow.
-            </p>
-
-            <div class="feature-row">
-                <span>✈ Flight Search</span>
-                <span>⌂ Hotel Research</span>
-                <span>◎ Smart Itinerary</span>
-            </div>
-        </section>
-
-        <!-- Main planner -->
-        <section class="planner-card">
-
-            <div class="planner-header">
-                <div>
-                    <p class="section-label">CREATE YOUR TRIP</p>
-                    <h2>Where are you going?</h2>
-                    <p class="section-description">
-                        Describe your destination, duration, origin and budget.
-                    </p>
-                </div>
-
-                <div class="status-pill">
-                    <span class="status-dot"></span>
-                    Online
-                </div>
-            </div>
-
-            <div class="prompt-wrapper">
-                <div class="session-controls">
-                <button
-                    type="button"
-                    id="newTripBtn"
-                    onclick="newTrip()"
-                >
-                    New Trip
-                </button>
-
-                <button
-                    type="button"
-                    id="cancelTripBtn"
-                    class="hidden"
-                    onclick="cancelTrip()"
-                >
+            <div class="session-controls">
+                <button type="button" id="cancelTripBtn" class="hidden">
                     Cancel Trip
                 </button>
+
+                <button type="button" id="newTripBtn">
+                    + New Trip
+                </button>
             </div>
-                <textarea
-                    id="userInput"
-                    placeholder="Example: Plan a 5 day trip to Italy from Greece including flights, hotels and sightseeing under €1500..."
-                ></textarea>
+        </header>
 
-                <div class="prompt-footer">
-                    <span class="shortcut-hint">
-                        Ctrl + Enter to generate
-                    </span>
+        <div class="chat-workspace">
 
-                    <button id="sendBtn" onclick="sendMessage()">
-                        <span id="btnText">
-                            Generate trip
-                            <span class="button-arrow">→</span>
-                        </span>
+            <!-- LEFT PANEL: Conversation -->
+            <section class="planner-card chat-panel">
 
-                        <span id="btnLoader" class="loader hidden"></span>
-                    </button>
-                </div>
-
-            </div>
-
-            <div class="quick-prompts-wrapper">
-                <span class="quick-label">Try an example</span>
-
-                <div class="quick-prompts">
-
-                    <button onclick="setPrompt(
-                        'Plan a complete 5 days trip to Italy from Greece including flights, hotels and sightseeing under 1500€.'
-                    )">
-                        🇮🇹 Italy
-                    </button>
-
-                    <button onclick="setPrompt(
-                        'Plan a complete 7 days Japan trip from Greece including flights, hotels and sightseeing.'
-                    )">
-                        🇯🇵 Japan
-                    </button>
-
-                    <button onclick="setPrompt(
-                        'Plan a 7 days Thailand trip from Greece with budget hotels and sightseeing.'
-                    )">
-                        🇹🇭 Thailand
-                    </button>
-
-                    <button onclick="setPrompt(
-                        'Find budget hotels in Spain under $120 per night.'
-                    )">
-                        🏨 Budget hotels
-                    </button>
-
-                </div>
-            </div>
-
-        </section>
-
-
-        <!-- Error -->
-        <section id="errorBox" class="error-box hidden"></section>
-
-
-        <!-- Result -->
-        <section id="resultSection" class="result-section hidden">
-
-            <div class="result-header">
-
-                <div>
-                    <p class="section-label">YOUR TRAVEL PLAN</p>
-                    <h2>Your personalized itinerary</h2>
-                    <p id="threadInfo" class="thread-info">
-                        Thread ID: -
+                <div class="chat-header">
+                    <h2>Travel assistant</h2>
+                    <p id="sessionStatus" role="status">
+                        Ready to plan
                     </p>
                 </div>
 
-                <div class="result-actions">
+                <!-- Conversation messages are rendered dynamically. -->
+                <div
+                    id="chatMessages"
+                    class="chat-messages"
+                    role="log"
+                    aria-live="polite"
+                ></div>
 
-                    <button class="copy-btn" onclick="copyResult()">
-                        Copy
-                    </button>
+                <!-- Errors remain separate from conversation messages. -->
+                <div
+                    id="errorBox"
+                    class="error-box hidden"
+                    role="alert"
+                ></div>
 
-                    <button class="download-btn" onclick="downloadPDF()">
-                        Download PDF
-                    </button>
+                <!-- Chat message composer -->
+                <form id="chatForm" class="prompt-wrapper">
 
+                    <textarea
+                        id="userInput"
+                        aria-label="Travel request"
+                        placeholder="Where would you like to travel?"
+                        maxlength="2000"
+                        rows="3"
+                    ></textarea>
+
+                    <div class="prompt-footer">
+                        <span class="shortcut-hint">
+                            Ctrl + Enter to send
+                        </span>
+
+                        <button id="sendBtn" type="submit">
+                            <span id="btnText">Send →</span>
+                            <span
+                                id="btnLoader"
+                                class="loader hidden"
+                            ></span>
+                        </button>
+                    </div>
+
+                </form>
+
+            </section>
+
+            <!-- RIGHT PANEL: Trip brief and generated travel plan -->
+            <section class="planner-card trip-panel">
+
+                <div class="trip-panel-header">
+                    <p class="section-label">YOUR JOURNEY</p>
+                    <h2>Your trip</h2>
                 </div>
 
-            </div>
+                <!-- Empty state before confirmation. -->
+                <div id="tripEmptyState" class="trip-empty-state">
+                    <div class="empty-state-icon">◎</div>
 
-            <div id="pdfContent" class="pdf-content">
-                <h1 class="pdf-title">Travora AI Travel Plan</h1>
+                    <h3>Let's plan your next adventure</h3>
 
-                <div id="resultBox" class="result-box"></div>
-            </div>
+                    <p>
+                        Tell me where you want to go.
+                        Your trip details will appear here
+                        once we have enough information.
+                    </p>
+                </div>
 
-            <!-- Shown only while the graph waits for trip confirmation. -->
-            <div id="tripBriefActions" class="trip-brief-actions hidden">
-                <button
-                    type="button"
-                    id="editBriefBtn"
-                    onclick="editTripBrief()"
-                >
-                    Edit details
-                </button>
+                <!-- Structured trip brief -->
+                <section id="tripBriefSection" class="hidden">
 
-                <button
-                    type="button"
-                    id="buildPlanBtn"
-                    onclick="buildPlan()"
-                >
-                    Build Plan
-                </button>
-            </div>
+                    <p class="section-label">TRIP BRIEF</p>
+                    <h3 id="briefDestination"></h3>
 
-        </section>
+                    <!-- Generated from the structured API response. -->
+                    <dl id="briefDetails" class="brief-details"></dl>
+
+                    <div class="trip-brief-actions">
+                        <button type="button" id="editBriefBtn">
+                            Edit details
+                        </button>
+
+                        <button type="button" id="buildPlanBtn">
+                            Build Plan
+                        </button>
+                    </div>
+
+                </section>
+
+                <!-- Final generated travel result -->
+                <section id="resultSection" class="hidden">
+
+                    <div class="result-header">
+                        <div>
+                            <p class="section-label">TRAVEL RESULT</p>
+                            <h3>Your personalized plan</h3>
+                        </div>
+
+                        <div class="result-actions">
+                            <button
+                                type="button"
+                                id="copyBtn"
+                                class="copy-btn"
+                            >
+                                Copy
+                            </button>
+
+                            <button
+                                type="button"
+                                id="downloadBtn"
+                                class="download-btn"
+                            >
+                                Download PDF
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="pdfContent" class="pdf-content">
+                        <h1 class="pdf-title">
+                            Travora AI Travel Plan
+                        </h1>
+
+                        <div id="resultBox" class="result-box"></div>
+                    </div>
+
+                </section>
+
+            </section>
+
+        </div>
 
     </main>
+  
 
 
     <footer>
@@ -204,13 +190,16 @@
         Built with LangGraph, FastAPI and Groq
     </footer>
 
+    <!-- Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
 
-    <!-- Markdown rendering -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Sanitize generated HTML before inserting it into the DOM. -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.5.0/dist/purify.min.js"></script>
 
-    <!-- Client-side PDF generation -->
+    <!-- Client-side PDF export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
+    <!-- Travora frontend logic -->
     <script src="/static/script.js"></script>
 
 </body>
