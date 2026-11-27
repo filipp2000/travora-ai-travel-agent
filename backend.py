@@ -14,6 +14,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from pydantic_models.api_request import SessionAction
+from pydantic_models.api_response import ResponseType, SessionStatus
 from pydantic_models.travel_request import (
     RequestCheck,
     RequestIntent,
@@ -222,6 +223,8 @@ graph.add_conditional_edges(
     route_after_understanding,
     [
         "assess_trip_readiness",
+        "ask_trip_details",
+        "present_trip_brief",
         "scope_response",
     ],
 )
@@ -353,6 +356,7 @@ db_pool = ConnectionPool(
 # to be reconstructed from persisted LangGraph checkpoints.
 checkpoint_serializer = JsonPlusSerializer(
     allowed_msgpack_modules=[
+        ResponseType,
         RequestIntent,
         TravelCapability,
         TravelRequest,
@@ -445,7 +449,8 @@ def run_travel_agent(
         )
 
         return {
-            "status": "cancelled",
+            "status": SessionStatus.CANCELLED,
+            "response_type": ResponseType.MESSAGE,
             "thread_id": thread_id,
             "answer": "Trip planning cancelled.",
         }
@@ -576,9 +581,14 @@ def run_travel_agent(
 
         return {
             "status": (
-                "requires_confirmation"
+                SessionStatus.REQUIRES_CONFIRMATION
                 if is_confirmation
-                else "requires_input"
+                else SessionStatus.REQUIRES_INPUT
+            ),
+            "response_type": (
+                ResponseType.TRIP_BRIEF
+                if is_confirmation
+                else ResponseType.CLARIFICATION
             ),
             "thread_id": active_thread_id,
             "answer": interrupt_payload.get(
@@ -611,7 +621,8 @@ def run_travel_agent(
     # PostgreSQL but is considered closed by the product.
     # -----------------------------------------------------
     return {
-        "status": "completed",
+        "status": SessionStatus.COMPLETED,
+        "response_type": result["terminal_response_type"],
         "thread_id": active_thread_id,
         "answer": result.get(
             "final_answer",

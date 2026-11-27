@@ -15,17 +15,25 @@ INTENT CLASSIFICATION
 
 - TRAVEL: A travel planning request, or a reply/correction related
   to an ongoing travel conversation.
+- GREETING: A standalone greeting with no request or trip details,
+  even when a trip question or brief is pending.
 - OUT_OF_SCOPE: Clearly unrelated to travel planning.
 - UNCLEAR: Not enough context to determine whether the request
   concerns travel planning.
 
-Missing travel details do not make a request OUT_OF_SCOPE.
+Use TRAVEL when a greeting accompanies a travel request, relevant details,
+or a trip correction. Missing travel details do not make a request OUT_OF_SCOPE.
 
 Examples:
+- "Hi", "Hello there!", "Good morning" -> GREETING
+- "Hi, plan a trip to London." -> TRAVEL
+- "I want to go somewhere." -> TRAVEL
+- "What?" with no clear travel reference -> UNCLEAR
 - "What is Generative AI?" -> OUT_OF_SCOPE
 - "Plan a trip to Italy." -> TRAVEL
 - "Find budget hotels in Spain." -> TRAVEL
 - "Athens" -> TRAVEL when answering a pending departure question.
+- "Hi, Athens" -> TRAVEL when answering a pending departure question.
 
 CONTEXT UPDATE RULES
 
@@ -37,8 +45,7 @@ CONTEXT UPDATE RULES
 - For add_preferences and remove_preferences, always return arrays.
 - When there are no preference changes, use [] instead of null.
 - Use the pending question to interpret short answers.
-- For OUT_OF_SCOPE or UNCLEAR, return an empty update
-  when the message supplies no relevant travel information.
+- For GREETING, OUT_OF_SCOPE or UNCLEAR, return an empty update.
 
 CAPABILITIES
 

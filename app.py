@@ -16,6 +16,7 @@ from backend import (
     run_travel_agent,
 )
 from pydantic_models.api_request import TravelRequestBody
+from pydantic_models.api_response import TravelResponse
 from services.session_lifecycle import SessionConflictError
 
 logger = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ async def home(request: Request):
     return templates.TemplateResponse(request=request, name="index.html", context={})
 
 
-@app.post("/api/travel")
+@app.post("/api/travel", response_model=TravelResponse)
 async def travel_planner(request_data: TravelRequestBody):
     try:
         # Request validation is handled by TravelRequestBody.
@@ -85,23 +86,7 @@ async def travel_planner(request_data: TravelRequestBody):
             action=request_data.action,
         )
 
-        # Return plain application data back to the client as JSON.
-        return JSONResponse(
-            content={
-                "success": True,
-                # Used by the frontend to decide whether the
-                # thread must be preserved for clarification.
-                "status": result["status"],
-                "thread_id": result["thread_id"],
-                "answer": result["answer"],
-                "flight_results": result.get("flight_results", ""),
-                "hotel_results": result.get("hotel_results", ""),
-                "activity_results": result.get("activity_results", ""),
-                "itinerary": result.get("itinerary", ""),
-                # Structured brief is available only at confirmation.
-                "brief": result.get("brief"),
-            }
-        )
+        return TravelResponse.model_validate(result)
 
     except SessionConflictError as exc:
         # Unknown, completed or cancelled threads

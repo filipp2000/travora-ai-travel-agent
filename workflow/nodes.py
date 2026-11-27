@@ -8,6 +8,7 @@ from langchain_core.messages import (
 from langgraph.types import interrupt
 
 from llm.request_parser import extract_trip_turn
+from pydantic_models.api_response import ResponseType
 from pydantic_models.travel_request import RequestIntent, TravelCapability
 from pydantic_models.trip_context import (
     TripContext,
@@ -36,7 +37,9 @@ def scope_response_node(state: TravelState) -> dict:
     if request is None:
         raise ValueError("Parsed request is missing.")
 
-    if request.intent == RequestIntent.OUT_OF_SCOPE:
+    if request.intent == RequestIntent.GREETING:
+        answer = "Hi! I can help you plan a trip. Where would you like to go?"
+    elif request.intent == RequestIntent.OUT_OF_SCOPE:
         answer = (
             "Travora specializes in travel planning, "
             "flights, hotels, and activities. "
@@ -49,7 +52,10 @@ def scope_response_node(state: TravelState) -> dict:
             "Could you describe what you would like to plan?"
         )
 
-    return {"final_answer": answer}
+    return {
+        "final_answer": answer,
+        "terminal_response_type": ResponseType.MESSAGE,
+    }
 
 
 def understand_request_node(
@@ -69,23 +75,25 @@ def understand_request_node(
     # model_validate accepts both a TripContext and a dictionary.
     current_context = TripContext.model_validate(state.get("trip_context") or {})
 
-    # Extract the current turn in the context of what we
-    # already know and what we previously asked.
+    latest_message = state.get("latest_user_message") or state["user_query"]
+    turn_source = state.get("turn_source")
     turn = extract_trip_turn(
-        latest_message=state["user_query"],
+        latest_message=latest_message,
         current_context=current_context,
         pending_question=state.get("pending_question"),
         llm=llm,
     )
 
     if turn.intent == RequestIntent.TRAVEL:
-        # Apply updates deterministically without losing previous content.
         updated_context = merge_trip_context(
             current_context,
             turn.update,
         )
+        if turn_source == "trip_brief" and updated_context == current_context:
+            return {"repeat_pending_phase": True}
     else:
-        # Do not modify trip data using an out-of-scope message.
+        if turn_source is not None:
+            return {"repeat_pending_phase": True}
         updated_context = current_context
 
     # Existing execution nodes still consume TravelRequest.
@@ -99,6 +107,8 @@ def understand_request_node(
     return {
         "trip_context": updated_context,
         "parsed_request": normalized_request,
+        "user_query": latest_message,
+        "repeat_pending_phase": False,
     }
 
 
@@ -148,6 +158,10 @@ def ask_trip_details_node(
     if question is None:
         raise ValueError("Cannot request trip details when context is ready.")
 
+    prompt = question
+    if state.get("repeat_pending_phase"):
+        prompt = f"Let's continue with your trip details. {question}"
+
     # Persist the current graph execution and ask the user
     # for the missing information.
     #
@@ -155,7 +169,7 @@ def ask_trip_details_node(
     answer = interrupt(
         {
             "type": "trip_details",
-            "question": question,
+            "question": prompt,
             "issues": [issue.value for issue in readiness.issues],
         }
     )
@@ -169,7 +183,8 @@ def ask_trip_details_node(
     return {
         # The next understand_request invocation will parse
         # the clarification as the latest conversational turn.
-        "user_query": user_reply,
+        "latest_user_message": user_reply,
+        "turn_source": "trip_details",
         # Supply the question that this reply is answering.
         "pending_question": question,
         # Add the new user message to LangGraph conversation history.
@@ -206,14 +221,18 @@ def present_trip_brief_node(
         request=request,
     )
 
+    question = "Please review your trip details. Build the plan or edit any information."
+    if state.get("repeat_pending_phase"):
+        question = (
+            "Your trip brief is unchanged. "
+            "Select Build Plan to continue, or tell me what to change."
+        )
+
     # Pause before ANY external travel research.
     decision = interrupt(
         {
             "type": "trip_brief",
-            "question": (
-                "Please review your trip details. "
-                "Build the plan or edit any information."
-            ),
+            "question": question,
             "brief": brief,
         }
     )
@@ -252,7 +271,8 @@ def present_trip_brief_node(
 
             # Reuse our existing TripTurn parser.
             # No second extraction implementation is needed.
-            "user_query": message,
+            "latest_user_message": message,
+            "turn_source": "trip_brief",
 
             # The parser knows this is an edit to the current trip.
             "pending_question": (
@@ -522,5 +542,6 @@ Response requirements:
 
     return {
         "final_answer": response.content,
+        "terminal_response_type": ResponseType.TRAVEL_RESULT,
         "messages": [response],
     }

@@ -1,5 +1,11 @@
 
 const STORAGE_KEY = "travora_conversation_v1";
+const RESPONSE_TYPES_BY_STATUS = {
+    requires_input: ["clarification"],
+    requires_confirmation: ["trip_brief"],
+    completed: ["message", "travel_result"],
+    cancelled: ["message"]
+};
 
 let isLoading = false;
 
@@ -8,6 +14,7 @@ function createEmptyState() {
     return {
         threadId: null,
         status: "idle",
+        responseType: null,
         messages: [],
         brief: null,
         answer: "",
@@ -30,10 +37,27 @@ function loadState() {
                 parsed &&
                 Array.isArray(parsed.messages)
             ) {
-                return {
+                const restored = {
                     ...createEmptyState(),
                     ...parsed
                 };
+
+                if (!restored.responseType) {
+                    if (restored.status === "requires_input") {
+                        restored.responseType = "clarification";
+                    } else if (restored.status === "requires_confirmation") {
+                        restored.responseType = "trip_brief";
+                    } else if (restored.status === "completed") {
+                        // Older snapshots cannot prove that the answer is a plan.
+                        return {
+                            ...createEmptyState(),
+                            messages: restored.messages,
+                            blocked: restored.blocked
+                        };
+                    }
+                }
+
+                return restored;
             }
         }
 
@@ -68,6 +92,11 @@ function isPendingSession() {
         state.status === "requires_input" ||
         state.status === "requires_confirmation"
     );
+}
+
+
+function hasTravelResult() {
+    return state.responseType === "travel_result";
 }
 
 
@@ -249,11 +278,10 @@ function renderTripPanel() {
     );
 
     const hasBrief =
-        state.status === "requires_confirmation" &&
+        state.responseType === "trip_brief" &&
         state.brief !== null;
 
-    const hasResult =
-        state.status === "completed";
+    const hasResult = hasTravelResult();
 
     emptySection.classList.toggle(
         "hidden",
@@ -292,11 +320,10 @@ function renderControls() {
     const awaitingConfirmation =
         state.status === "requires_confirmation";
 
-    const completed =
-        state.status === "completed";
+    const hasResult = hasTravelResult();
 
     const cannotSubmit =
-        isLoading || state.blocked || completed;
+        isLoading || state.blocked || hasResult;
 
     document.getElementById("sendBtn").disabled =
         cannotSubmit;
@@ -325,7 +352,7 @@ function renderControls() {
 
     for (const id of ["copyBtn", "downloadBtn"]) {
         document.getElementById(id).disabled =
-            isLoading || !completed;
+            isLoading || !hasResult;
     }
 
     document.getElementById("btnText")
@@ -351,7 +378,7 @@ function renderControls() {
         input.placeholder =
             "Tell me what you would like to change...";
 
-    } else if (completed) {
+    } else if (hasResult) {
         status.textContent = "Travel request completed";
         input.placeholder = "Start a new trip to continue.";
 
@@ -415,45 +442,39 @@ async function postTravelAction(payload) {
         throw error;
     }
 
+    const cancelling = payload.action === "cancel";
+    if (
+        !Object.hasOwn(RESPONSE_TYPES_BY_STATUS, data.status) ||
+        !RESPONSE_TYPES_BY_STATUS[data.status].includes(data.response_type) ||
+        !data.thread_id ||
+        cancelling !== (data.status === "cancelled")
+    ) {
+        throw new Error("Unexpected response from Travora.");
+    }
+
+    if (data.response_type === "trip_brief" && !data.brief) {
+        throw new Error("Trip brief is missing.");
+    }
+
+    if (payload.thread_id && payload.thread_id !== data.thread_id) {
+        throw new Error("Unexpected session change.");
+    }
+
     return data;
 }
 
 
 function applyTravelResponse(data) {
-    const validStatuses = [
-        "requires_input",
-        "requires_confirmation",
-        "completed"
-    ];
+    const terminalMessage =
+        data.status === "completed" && data.response_type === "message";
 
-    if (
-        !validStatuses.includes(data.status) ||
-        !data.thread_id
-    ) {
-        throw new Error("Unexpected response from Travora.");
-    }
-
-    if (
-        data.status === "requires_confirmation" &&
-        !data.brief
-    ) {
-        throw new Error("Trip brief is missing.");
-    }
-
-    // Existing sessions must retain the same thread ID.
-    if (
-        state.threadId &&
-        state.threadId !== data.thread_id
-    ) {
-        throw new Error("Unexpected session change.");
-    }
-
-    state.threadId = data.thread_id;
+    state.threadId = terminalMessage ? null : data.thread_id;
     state.status = data.status;
+    state.responseType = data.response_type;
     state.brief = data.brief ?? null;
     state.blocked = false;
 
-    if (data.status === "completed") {
+    if (hasTravelResult()) {
         state.answer = data.answer || "";
 
         addMessage(
@@ -529,7 +550,7 @@ async function sendMessage() {
     if (
         isLoading ||
         state.blocked ||
-        state.status === "completed"
+        hasTravelResult()
     ) {
         return;
     }
@@ -565,7 +586,7 @@ async function sendMessage() {
     if (success) {
         input.value = "";
 
-        if (state.status !== "completed") {
+        if (!hasTravelResult()) {
             input.focus();
         }
     }
@@ -592,7 +613,7 @@ async function buildPlan() {
     );
 
     // On mobile, bring the completed result into view.
-    if (state.status === "completed") {
+    if (hasTravelResult()) {
         document.getElementById("resultSection")
             .scrollIntoView({
                 behavior: "smooth",
@@ -633,16 +654,10 @@ async function newTrip() {
         if (isPendingSession()) {
             try {
                 // Persistently cancel the previous pending thread.
-                const result = await postTravelAction({
+                await postTravelAction({
                     action: "cancel",
                     thread_id: state.threadId
                 });
-
-                if (result.status !== "cancelled") {
-                    throw new Error(
-                        "Unexpected cancellation response."
-                    );
-                }
 
             } catch (error) {
 
@@ -682,7 +697,7 @@ async function newTrip() {
 async function copyResult() {
     if (
         isLoading ||
-        state.status !== "completed"
+        !hasTravelResult()
     ) {
         return;
     }
@@ -711,7 +726,7 @@ async function copyResult() {
 async function downloadPDF() {
     if (
         isLoading ||
-        state.status !== "completed" ||
+        !hasTravelResult() ||
         !state.answer
     ) {
         return;

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 # User input intent classification
 class RequestIntent(StrEnum):
     TRAVEL = "travel"
+    GREETING = "greeting"
     OUT_OF_SCOPE = "out_of_scope"
     UNCLEAR = "unclear"
 
@@ -67,9 +68,8 @@ class TravelRequest(BaseModel):
     intent: RequestIntent = Field(
         default=RequestIntent.TRAVEL,
         description=(
-            "Classify whether the input is a travel-related request, "
-            "outside the application's scope, or too ambiguous "
-            "to classify reliably."
+            "Classify the input as travel-related, a standalone greeting, "
+            "outside the application's scope, or too ambiguous to classify."
         ),
     )
 

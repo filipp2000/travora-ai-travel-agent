@@ -109,8 +109,8 @@ class TripTurn(BaseModel):
 
     intent: RequestIntent = Field(
         description=(
-            "Whether the latest message is travel-related, "
-            "out of scope, or unclear in the current context."
+            "Whether the latest message is travel-related, a standalone "
+            "greeting, out of scope, or unclear in the current context."
         ),
     )
 

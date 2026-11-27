@@ -1,8 +1,9 @@
-from typing import Annotated, TypedDict
+from typing import Annotated, Literal, TypedDict
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
+from pydantic_models.api_response import ResponseType
 from pydantic_models.travel_request import (
     RequestCheck,
     TravelRequest,
@@ -25,6 +26,11 @@ class TravelState(TypedDict, total=False):
     # Helps interpret user replies
     pending_question: str | None
 
+    latest_user_message: str
+    turn_source: Literal["trip_details", "trip_brief"]
+    repeat_pending_phase: bool
+
+    # Most recent accepted planning input, also used by synthesis.
     user_query: str
 
     parsed_request: TravelRequest | None
@@ -41,3 +47,4 @@ class TravelState(TypedDict, total=False):
     brief_decision: str | None
     
     final_answer: str
+    terminal_response_type: ResponseType

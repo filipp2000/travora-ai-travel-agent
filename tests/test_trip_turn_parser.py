@@ -58,6 +58,53 @@ def test_parser_extracts_one_structured_turn():
     llm.with_structured_output.return_value.invoke.assert_called_once()
 
 
+@pytest.mark.parametrize(
+    ("message", "pending_question", "raw_intent", "update"),
+    [
+        ("Hi", None, "greeting", {}),
+        ("Hello there!", None, "greeting", {}),
+        ("Good morning", None, "greeting", {}),
+        (
+            "Hi, plan a trip to London.",
+            None,
+            "travel",
+            {"destination": "London", "capabilities": ["itinerary"]},
+        ),
+        ("I want to go somewhere.", None, "travel", {}),
+        ("What?", None, "unclear", {}),
+        (
+            "Hi, Athens",
+            "Where will you depart from?",
+            "travel",
+            {"origin": "Athens"},
+        ),
+    ],
+    ids=[
+        "hi",
+        "hello",
+        "good_morning",
+        "mixed_greeting_and_request",
+        "incomplete_travel",
+        "unclear",
+        "mixed_greeting_and_pending_details",
+    ],
+)
+def test_structured_turn_supports_greeting_and_travel_contract(
+    message, pending_question, raw_intent, update
+):
+    turn = TripTurn.model_validate({"intent": raw_intent, "update": update})
+    llm = mock_llm(turn)
+
+    result = extract_trip_turn(
+        message, TripContext(), llm, pending_question=pending_question
+    )
+
+    assert result.intent.value == raw_intent
+    assert result.update == TripContextUpdate.model_validate(update)
+    llm.with_structured_output.assert_called_once_with(TripTurn, method="json_schema")
+    llm.with_structured_output.return_value.invoke.assert_called_once()
+
+
 def test_parser_receives_existing_context_and_pending_question():
     llm = mock_llm(
         TripTurn(

@@ -91,6 +91,8 @@ def build_test_graph(llm: Mock):
         route_after_understanding,
         [
             "assess_trip_readiness",
+        "ask_trip_details",
+        "present_trip_brief",
             "scope_response",
         ],
     )
