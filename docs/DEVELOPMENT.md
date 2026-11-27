@@ -2,19 +2,19 @@
 
 <a id="baseline"></a>
 
-## Current baseline and next task
+## Current baseline and actionable roadmap item
 
 | Item | Status |
 |---|---|
 | Repository | `filipp2000/travora-ai-travel-agent`. The audited local working directory and Git root were the same checkout, named `TravelAgent`. |
 | Audit snapshot | 27 November 2026, `feature/conversational-trip-planning` at `ddc43e0b070cb3d3c151e324293670e24a9477c9`. The local `origin/feature/conversational-trip-planning` tracking ref matched with `+0/-0`. Local `main` and `origin/main` were at `7fe0917`, 11 feature commits behind. No live remote or deployment was queried. |
 | Working tree at audit | Only an unstaged `.gitignore` entry for the temporary `TRAVORA_PRODUCTION_HANDOVER.md`. The handover was ignored and untracked. No staged or uncommitted application changes. The consolidation adds the three permanent documentation files only. |
-| Last milestone with reported functional acceptance | **1E**, committed in `3f6b080`, `83a49a2` and `b2f93f1`. The developer reported integration and real LangSmith smoke success. The current audit verified source and offline paths, including the remaining technical-clarification reapproval gap. |
-| Latest implemented and committed milestone | **1F.1**, chat-first UI at `ddc43e0` (26 November 2026). Scope replies still render as travel results. Full UI acceptance is open. |
-| Active next milestone | **1F.1a**, conversational response handling. Discuss the [response semantics proposal](ARCHITECTURE.md#b12), including pending phases and the next fresh thread, then seek implementation authorization. See the [exact next task and regression matrix](#c7). |
-| Current verification | 87 offline tests passed using the existing virtual environment, plus controlled API handler/application-graph and JavaScript probes. See [test evidence and limitations](#c4). |
+| Last roadmap item with reported functional acceptance | **1E**, committed in `3f6b080`, `83a49a2` and `b2f93f1`. The developer reported integration and real LangSmith smoke success. The current audit verified source and offline paths, including the remaining technical-clarification reapproval gap. |
+| Conversational UI baseline | **1F.1**, chat-first UI at `ddc43e0` (26 November 2026). At that baseline, scope replies rendered as travel results. Full UI acceptance is open. |
+| Current actionable roadmap item | **1F.1a**, Conversational Response Handling, a corrective sub-increment of **1F.1** within milestone **1F**. Checkpoints 1–3 are committed in `eb529df`. The developer confirmed the greeting behavior in the browser and authorized publication to the feature branch. Broader development verification remains open. See the [implementation tasks and regression matrix](#c7). |
+| Current verification | 112 offline Pytest cases, six Node UI regressions and two previous-source resume scenarios in memory. The developer reported that the mixed London request reached clarification and that the standalone greeting rendered correctly after a hard refresh. See [checkpoint evidence and limitations](#c7). |
 
-The immediate design work is to distinguish lifecycle completion from response content, preserve the current question or reviewed brief on unrelated input, and keep explicit `BUILD` as the only approval action. Review the current source for each affected path before editing. The agreed order after 1F.1a is 1F.1b UI refinement, 1F.2 reliability/E2E, then 1F.3 release readiness. The production boundary and broader roadmap remain unchanged. [Graph and approval paths](ARCHITECTURE.md#b4) · [Roadmap](#c3)
+Checkpoints 1–3 distinguish lifecycle completion from response content, preserve the current question or reviewed brief on unrelated input, and add standalone greeting intent. Explicit `BUILD` remains the only approval action. Review the current source for each affected path before editing. The agreed order after 1F.1a is 1F.1b UI refinement, 1F.2 reliability/E2E, then 1F.3 release readiness. The production boundary and broader roadmap remain unchanged. [Graph and approval paths](ARCHITECTURE.md#b4) · [Roadmap](#c3)
 
 <a id="evidence"></a>
 
@@ -48,7 +48,7 @@ The early production review transcript was incomplete. See the [provenance inven
 
 Dates in the chronology distinguish Git commit dates from conversation and snapshot dates. Source and Git evidence fill the checkout gaps from the handover. Early conversation context was summarized, and some pre-1A subphase names, dates and rationale remain unrecoverable. See [evidence and provenance](#evidence).
 
-| Time / milestone | Changes and evidence | Status |
+| Time / roadmap item | Changes and evidence | Status |
 |---|---|---|
 | By 27 Aug 2026 | Tutorial reproduced, minor frontend adjustments, GitHub uploaded, Render deployment reported live. User asks how to grow into production app, README demo link discussion. Uvicorn `0.0.0.0` vs browser `127.0.0.1` explained. | Reported complete, S1/S4 |
 | From 4 Sep 2026 | Production architecture review. Move toward typed domain requests, validation, deterministic routing, selective external calls, graph persistence, structured testing, reliability and real product experience. | Early transcript partial, S1–S4 |
@@ -63,7 +63,7 @@ Dates in the chronology distinguish Git commit dates from conversation and snaps
 | 1D.2 | Explicit START/REPLY/CANCEL, logical cancellation, validation/error handling, frontend controls, lifecycle tests. | Current source and commits `02e553a`, `922a435` and `1169860` verified. Manual checks developer-reported (S5). |
 | 1E (by 25 Nov) | Trip brief deterministic projection, approval interrupt and BUILD/EDIT, session phase checks, temporary frontend actions, tests/trace. Indentation bug fixed. Developer confirms all integration tests passed and commits to dev branch. | Committed at `3f6b080`, `83a49a2` and `b2f93f1` on 24 November. Historical integration and trace checks developer-reported (S5/S6). |
 | 1F.1 (25 Nov) | Chat-first interface, dual panels, sessionStorage state, sanitized result, Copy/PDF. London happy path and known scope rendering issue shown in screenshots. | Committed at `ddc43e0` on 26 November. S6/S7 record partial acceptance evidence and an open semantic bug. |
-| 1F.1a (latest discussion) | Response type separation, GREETING intent and context-aware guardrails proposed. | Immediate next task. Contract and implementation pending. |
+| 1F.1a (response semantics discussion) | Response type separation, GREETING intent and context-aware guardrails proposed. | Corrective sub-increment of 1F.1. Contract and implementation pending. |
 | 26 Nov 2026 | User requests a comprehensive handover to Codex. | Original handover cutoff. |
 | 27 Nov 2026 | Read-only repository audit against `ddc43e0`. | Current source and Git verification, 87 offline tests passed and controlled application graph/frontend probes. |
 
@@ -157,27 +157,33 @@ Git now verifies `ddc43e0`, dated 26 November 2026, titled `Updated chat ui`, fo
 
 The latest agreed sequence is Release 1 conversational planning, followed by Release 2 draft/revision and Release 3 grounded structured travel results/provider improvements. The earlier broad production areas remain relevant, but exact original numbering prior to 1A and final scheduling beyond Release 1 are not available. The following preserves the latest ordering and explicitly distinguishes future topics without pretending they have a committed sprint allocation.
 
-| Milestone | Objective | State / dependency |
-|---|---|---|
-| Tutorial baseline | Reproduce, understand, run, publish/demo | Complete |
-| Early production refactor | Typed understanding, deterministic rules, selective graph, parallel research, single synthesis, DB lifecycle and basic guardrails | Historical code verifies main changes |
-| Environment isolation | Protect Render production. Local branch with dev Neon/LangSmith | Reported complete |
-| Release 1 / 1A | Typed context and deterministic merging | Complete. Prerequisite to per-turn parsing |
-| 1B | Unified intent + structured turn update | Complete. Prerequisite to readiness |
-| 1C | Deterministic readiness and targeted clarification | Complete. Prerequisite to multi-turn graph |
-| 1D.1 | Interrupt/resume with accumulated context | Complete. Prerequisite to explicit lifecycle |
-| 1D.2 | Explicit START/REPLY/CANCEL, safe errors, tests | Complete. Prerequisite to phase-specific approval |
-| 1E | Editable trip brief and explicit BUILD approval before research | Committed and source verified. Historical smoke reported. Reapproval gap remains in 1F.2. |
-| 1F.1 | Conversational UI | Committed in `ddc43e0`. Partial historical smoke. Open acceptance depends on the corrective increments. |
-| **1F.1a** | **Conversational response handling** | **Immediate next task. The source baseline is audited. Agree the response and pending-phase contract before implementation.** |
-| 1F.1b | UI/UX refinement | Planned after semantics fixed. Exact styling decisions not yet agreed |
-| 1F.2 | Reliability & E2E testing | Planned: regression, API/graph/browser correctness, provider/date/context, approval revalidation, security/concurrency |
-| 1F.3 | Release readiness | Planned: docs, production checkpoint compatibility, regression/release gate, PR/merge/deploy when authorized |
-| Release 2 | Post-generation draft approval/revision and follow-up | Future. Current completed plan is terminal in UI. Exact feature scope and approval workflow not finalized. |
-| Release 3 | Grounded, structured travel outputs, pricing/provider reliability | Future. Immediate dangerous date/provider claims need handling in 1F.2 before release, not postponed wholesale to Release 3. |
-| Supervisor / richer agent orchestration | Evaluate only if specific measurable need arises | Deferred. No assumption multi-agent beats deterministic graph |
+**Confirmed hierarchy.** Release 1 contains milestone **1F**, split into increments **1F.1**, **1F.2** and **1F.3**. The guardrail review added **1F.1a** and **1F.1b** before closing UI acceptance. The developer confirmed **1F.1a** as a corrective sub-increment under **1F.1**. The [implementation tasks](#c7) are the individual steps within **1F.1a**.
 
-The 1F split was initially 1F.1 conversational UI, 1F.2 reliability/E2E, 1F.3 release readiness. Guardrail review added 1F.1a and 1F.1b before closing UI. No merge to `main` at intermediate milestones.
+**Inferred and unconfirmed classifications.** The placement of **1F.1b** as a sub-increment of **1F.1** follows its numbering and the recorded UI closure sequence. The **1D.1** and **1D.2** identifiers suggest a **1D** grouping. The available record establishes no independent **1D** objective or acceptance status. **1A**, **1B**, **1C** and **1E** retain their documented Release 1 placement and objectives. C2 describes implemented increments, but the available record does not consistently establish the original formal level of these earlier items.
+
+| Roadmap item | Level / parent | Objective | State / dependency |
+|---|---|---|---|
+| Tutorial baseline | Historical phase | Reproduce, understand, run, publish/demo | Complete |
+| Early production refactor | Historical phase | Typed understanding, deterministic rules, selective graph, parallel research, single synthesis, DB lifecycle and basic guardrails | Historical code verifies main changes |
+| Environment isolation | Historical work | Protect Render production. Local branch with dev Neon/LangSmith | Reported complete |
+| Release 1 | Release | Conversational planning | In progress. Release gates remain open. |
+| 1A | Release 1 / formal level unconfirmed | Typed context and deterministic merging | Complete. Prerequisite to per-turn parsing |
+| 1B | Release 1 / formal level unconfirmed | Unified intent + structured turn update | Complete. Prerequisite to readiness |
+| 1C | Release 1 / formal level unconfirmed | Deterministic readiness and targeted clarification | Complete. Prerequisite to multi-turn graph |
+| 1D.1 | Increment / inferred 1D grouping | Interrupt/resume with accumulated context | Complete. Prerequisite to explicit lifecycle |
+| 1D.2 | Increment / inferred 1D grouping | Explicit START/REPLY/CANCEL, safe errors, tests | Complete. Prerequisite to phase-specific approval |
+| 1E | Release 1 / formal level unconfirmed | Editable trip brief and explicit BUILD approval before research | Committed and source verified. Historical smoke reported. Reapproval gap remains in 1F.2. |
+| 1F | Milestone / Release 1 | Conversational UI, reliability and release readiness through 1F.1–1F.3 | In progress. UI acceptance and release gates remain open. |
+| 1F.1 | Increment / 1F | Conversational UI | Committed in `ddc43e0`. Partial historical smoke. Open acceptance depends on the corrective increments. |
+| **1F.1a** | **Corrective sub-increment / 1F.1** | **Conversational Response Handling** | **Implemented and verified offline. Developer confirmed greeting rendering in the browser and authorized publication to the feature branch. Broader development smoke remains open.** |
+| 1F.1b | Sub-increment / 1F.1 (inferred) | UI/UX refinement | Planned after semantics fixed. Exact styling decisions not yet agreed |
+| 1F.2 | Increment / 1F | Reliability & E2E testing | Planned: regression, API/graph/browser correctness, provider/date/context, approval revalidation, security/concurrency |
+| 1F.3 | Increment / 1F | Release readiness | Planned: docs, production checkpoint compatibility, regression/release gate, PR/merge/deploy when authorized |
+| Release 2 | Release | Post-generation draft approval/revision and follow-up | Future. Current completed plan is terminal in UI. Exact feature scope and approval workflow not finalized. |
+| Release 3 | Release | Grounded, structured travel outputs, pricing/provider reliability | Future. Immediate dangerous date/provider claims need handling in 1F.2 before release, not postponed wholesale to Release 3. |
+| Supervisor / richer agent orchestration | Deferred topic | Evaluate only if specific measurable need arises | Deferred. No assumption multi-agent beats deterministic graph |
+
+Merge to `main` remains gated on Release 1 readiness and explicit authorization.
 
 ### Planned production areas and rationale (not all scheduled to a specific increment)
 
@@ -255,8 +261,8 @@ Ordering below groups the issues by the current roadmap, not a new prioritizatio
 
 | Issue | Evidence / reproduction | Expected direction / status |
 |---|---|---|
-| Initial Hi rendered as successful plan | S6 screenshot and offline API/JS probes with a mocked nontravel classification. Scope text in result panel, false plan-ready bubble, Copy/PDF enabled, composer disabled | 1F.1a separate response type, friendly GREETING. Open |
-| Nontravel during pending question/brief | Offline application graph reproduced repeated details question and preserved domain context. A nontravel EDIT generated a confirmation brief with empty effective capabilities. The following BUILD ended in scope without research | Preserve active context and phase, redirect and repeat current question/brief, no research. Regression required |
+| Initial Hi rendered as successful plan | S6 screenshot and offline API/JS probes with a mocked nontravel classification. Scope text in result panel, false plan-ready bubble, Copy/PDF enabled, composer disabled | Typed response, greeting reply and fresh START verified offline. The developer confirmed correct greeting rendering after a hard refresh. Broader browser and provider checks remain open. |
+| Nontravel during pending question/brief | Offline application graph reproduced repeated details question and preserved domain context. A nontravel EDIT generated a confirmation brief with empty effective capabilities. The following BUILD ended in scope without research | Fixed in checkpoint 2 with application-graph/API regressions. Pending context, question or brief, and accepted synthesis input are preserved. |
 | Stale UI after terminal conversation | `completed` disables composer. Thread mismatch check rejects fresh ID unless active thread cleared | Resolve with response semantics. Exact state transition not yet designed |
 | UI scroll/layout polish | Native white scrollbar and differing panel heights visible, large whitespace. Synthetic welcome disappears | 1F.1b discussion. No finalized visual specification |
 | Inaccurate trip dates | S7 page 1 shows 25 Nov 2026 flights and 1 Dec 2026 return, while the S6 approved start is 1 Feb 2027. Source and offline probe confirm that dates are lost at the execution adapter and the active flight query is route-only | 1F.2 date propagation and provider semantics. Describe flight status within the actual provider data scope |
@@ -324,14 +330,22 @@ Resolve/verify graph/provider input correctness, renewed approval after changed 
 
 <a id="c7"></a>
 
-## C7. Exact next task — 1F.1a conversational response handling
+## C7. 1F.1a implementation tasks — Conversational Response Handling
 
-**Starting point.** The chat-first UI is committed at `ddc43e0`. The developer requested a design discussion after observing `Hi` in the travel-result pane. The existing proposal separates `response_type` from lifecycle `status`, considers `GREETING` in the existing intent parser and preserves pending context with deterministic messages. The repository audit pinned down the current behavior. Implementation and approval of the exact 1F.1a contract remain pending. Keep CSS polish, production deployment, supervisor and unrelated refactoring in their existing roadmap positions.
+**Checkpoint 1 review evidence (27 November 2026).** The typed success response and UI transitions are implemented. The affected Pytest modules passed 48 cases. The full offline suite passed 96 cases with one Starlette test-client deprecation warning. The full command was `uv run --offline --locked --no-sync --no-cache python -m pytest -q -p no:cacheprovider tests` with dotenv and LangSmith tracing disabled and dummy provider configuration. The API tests exercise ASGI transport and the application graph with `InMemorySaver`, the configured serializer, mocked extraction and synthesis, and no PostgreSQL startup. `node --check static/script.js` and `node --test tests/test_response_ui.cjs` passed, with five DOM/storage stub regressions. Real browser behavior, PostgreSQL and live providers were outside this verification. Developer review gates checkpoint 2.
+
+**Checkpoint 2 review evidence (27 November 2026).** After checkpoint 1 approval, added same-phase routing for unrelated details replies, unrelated edits and edits with unchanged trip context. ASGI regressions verify the preserved request and prompt through explicit `BUILD`, provider/synthesis calls only after approval, and a material edit that reopens details and produces a new brief. The affected modules passed 54 cases, the full offline Pytest command above passed 102 cases with the same Starlette warning, and the five Node regressions passed. A transient probe compiled the previous graph from `d228ded` and resumed both its pending clarification and brief with the current graph using a shared `InMemorySaver`. This verifies the tested in-memory resumes. PostgreSQL, real browser and live provider verification remain open. Developer review gates checkpoint 3.
+
+**Checkpoint 3 review evidence (27 November 2026).** The developer approved checkpoint 2 and reported passing tests. Checkpoint 3 adds `GREETING` to the existing structured parser, a deterministic initial reply, and regressions for mixed travel input, both pending phases and a fresh START after refresh. The affected Pytest modules passed 73 cases, the full offline command above passed 112 cases with the same Starlette warning, and six Node DOM/storage stub regressions passed. The ASGI tests verify routing, the existing serializer and one structured invocation per turn using mocked model responses. Groq classification, Swagger/browser smoke and PostgreSQL verification require separate development authorization and remain open.
+
+**Developer browser check (28 November 2026).** The developer reported that "Hi, plan a trip to London" entered trip clarification. The standalone "Hi" first produced the expected greeting in the result panel. A read-only check confirmed that the running local server served the updated script and exposed the typed OpenAPI response. After a hard refresh, the developer confirmed the expected greeting behavior and authorized publication to the feature branch. This is a targeted browser check. No raw provider trace, broader Swagger/browser matrix or PostgreSQL verification was collected.
+
+**Starting point.** The chat-first UI was committed at `ddc43e0`. The developer requested a design discussion after observing `Hi` in the travel-result pane. The design separates `response_type` from lifecycle `status`, considers `GREETING` in the existing intent parser and preserves pending context with deterministic messages. The repository audit pinned down the behavior at that baseline. Keep CSS polish, production deployment, supervisor and unrelated refactoring in their existing roadmap positions.
 
 Use the [current architecture](ARCHITECTURE.md#b4) to discuss the following with the developer. Implement only after explicit authorization.
 
 1. Identify how `scope_response_node`, `generate_response_node` and terminal `run_travel_agent` currently encode results. Inspect exact enum/model imports and `TravelState`. Use the offline audit findings for pending questions and ready context as the baseline, and reproduce in focused regression cases.
-2. Review the proposed `ResponseType` and [API payload contract](ARCHITECTURE.md#b12). Agree how to distinguish terminal chat-only response vs pending clarification/brief response, how to preserve phase and context on social/nontravel edits, and which field/node owns semantic type. Ensure current request/response client contract consistent. `pydantic_models/api_response.py` is absent and remains a proposed location. Do not rely on string detection.
+2. Review `ResponseType` and the [API payload contract](ARCHITECTURE.md#b12). Agree how to distinguish terminal chat-only response vs pending clarification/brief response, how to preserve phase and context on social/nontravel edits, and which field/node owns semantic type. Ensure current request/response client contract consistent. Checkpoint 1 adds `pydantic_models/api_response.py`. Do not rely on string detection.
 3. Extend existing `RequestIntent`/`extract_trip_turn` only if agreed. Preserve TRAVEL priority for mixed greeting+travel. Use deterministic reply, no extra extraction or agent. Inspect serializer allowlist when adding types.
 4. Ensure no nontravel turn merges trip fields, bypasses confirmation, calls research or terminates a legitimate pending trip. Reconcile old parsed_request/context/brief routing. No new approval inferred from `hi`, `yes` typed in edit, or unrelated content. Exact handling of UNCLEAR and nontravel correction flow requires repository-based design.
 5. Update backend/app response mapping and `static/script.js` state/rendering. Initial terminal message goes to chat, right panel stays empty, composer ready, preserve chat, next START new thread without thread mismatch. Pending conversation retains existing ID/brief/question. Completed travel result retains current export UX. No new HTML/CSS needed merely for semantics.
@@ -390,7 +404,7 @@ Deterministic tests should assert response semantics and phase, no provider/synt
 - Earlier roadmap referenced future broader phases. Only latest Release 1 increments and Release 2/3 themes available. Do not reconstruct fictitious complete phase names/acceptance gates. Exact original production review, all Git commits and full trace histories missing.
 - The local branch is `feature/conversational-trip-planning` and the local remote-tracking ref matches `ddc43e0`. 1F.1 is committed and the temporary handover ignore entry was the sole local change at audit time. Live remote and deploy state were not queried.
 - Reported 1E real trace confirms expected flow, but direct trace access absent. Tests with stub execution node do not guarantee production no-bypass invariant. Restart persistence and negative actions need explicit evidence if not yet logged.
-- Response types and greeting intent remain proposals. Pending nontravel semantics, valid status/type combinations, brief revision validation, thread recovery and checkpoint migration are open. See [the next task](#c7).
+- Checkpoints 1–3 implement response types, pending nontravel behavior and greeting intent. Live greeting classification, brief revision validation, thread recovery and production checkpoint migration remain open. See the [1F.1a implementation tasks](#c7).
 
 <a id="c9"></a>
 
@@ -399,13 +413,13 @@ Deterministic tests should assert response semantics and phase, no provider/synt
 | Topic | Durable location | Evidence or open question |
 |---|---|---|
 | Product and engineering objectives | [AGENTS.md](../AGENTS.md), [product boundaries](ARCHITECTURE.md#b1) | Preserve current scope and learning-by-doing workflow. Future product scope requires agreement. |
-| History and significant bugs | [Chronology](#c1), [milestone history](#c2), [architectural evolution](ARCHITECTURE.md#b2) | Current Git and source reconciled. The early production review transcript and some exact pre-1A phase labels remain unavailable. |
+| History and significant bugs | [Chronology](#c1), [implementation history](#c2), [architectural evolution](ARCHITECTURE.md#b2) | Current Git and source reconciled. The early production review transcript and some exact pre-1A phase labels remain unavailable. |
 | Current architecture, stack, contracts and providers | [Architecture](ARCHITECTURE.md#b3) | Local source, Git and lockfile inspected. Provider responses and corroborating original traces remain unverified in this audit. |
 | Persistence, security and deployment | [Architecture](ARCHITECTURE.md#b7), [planned production areas](#c3), [known issues](#c5) | Actual runtime mapping, checkpoint compatibility, storage policy, concurrency and ownership need release verification or design. |
 | Architectural decisions and alternatives | [ADR-01 through ADR-28](ARCHITECTURE.md#b11), [response proposal](ARCHITECTURE.md#b12) | All 28 recorded decisions retained. Any additional early decisions require evidence. The 1F.1a proposal remains pending. |
-| Roadmap, acceptance and next task | [Roadmap](#c3), [manual scenarios](#c6), [1F.1a regression matrix](#c7) | All recovered milestone IDs and order retained. Additional historical roadmap detail, release thresholds and PR/rollout/rollback plans are unresolved. |
+| Roadmap, acceptance and current actionable item | [Roadmap](#c3), [manual scenarios](#c6), [1F.1a tasks and regression matrix](#c7) | All recovered roadmap IDs and order retained. Additional historical roadmap detail, release thresholds and PR/rollout/rollback plans are unresolved. |
 | Collaboration and conventions | [AGENTS.md](../AGENTS.md) | Startup, mentorship, implementation authorization, environment boundaries and maintenance documented. |
 | Tests, R&D and evaluation | [Test evidence](#c4), [smoke tests](#c6), [regression matrix](#c7) | 87 offline tests and focused probes recorded. Live providers, PostgreSQL, real browser and evaluation pipeline remain outside current verification. |
 | Evidence and remaining knowledge gaps | [Classification](#evidence), [provenance](#c8) | Historical artifacts and developer reports remain traceable without depending on the original conversation for ordinary development. |
 
-The three permanent files carry the available engineering context. A new session should begin with the baseline above and the [1F.1a design task](#c7), preserve dev/prod isolation and keep Release 1 deployment gated on the remaining verification and explicit authorization.
+The three permanent files carry the available engineering context. A new session should begin with the [baseline and current actionable roadmap item](#baseline), preserve dev/prod isolation and keep Release 1 deployment gated on the remaining verification and explicit authorization.

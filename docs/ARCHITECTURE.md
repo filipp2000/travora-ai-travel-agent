@@ -55,7 +55,7 @@ Repository inventory verified against the audited checkout.
 | `tests/` | reorganized deterministic and graph integration tests. See C |
 | `evaluations/inspect_trip_turns.py` | real LLM extraction inspection (replaces older parser inspection script) |
 | `pyproject.toml`, `uv.lock`, `Dockerfile`, `.env.example`, `.gitignore`, `README.md` | dependencies, deployment, configuration contract and documentation |
-| `pydantic_models/api_response.py` | **Proposed** for 1F.1a response typing. Absent at the audited baseline |
+| `pydantic_models/api_response.py` | Typed success response added in 1F.1a checkpoint 1. Absent at the audited baseline |
 
 The older `validation/` directory and `validation.inspect_request_parser` command were superseded by `tests/` and `evaluations/`. The tracked README still references the old command, old validation path and pre-conversational topology. The S2 archive contained `__pycache__` and is historical source evidence. See [the verified Git baseline and documentation gaps](DEVELOPMENT.md#baseline).
 
@@ -63,17 +63,19 @@ The older `validation/` directory and `validation.inspect_request_parser` comman
 
 ## B4. Current graph and execution flow
 
-The topology is source-verified in [backend.py](../backend.py), [workflow/nodes.py](../workflow/nodes.py) and [workflow/routing.py](../workflow/routing.py) at the [audited baseline](DEVELOPMENT.md#baseline). `CANCEL` is an API-side checkpoint update. `route_after_check()` can return a list of selected research nodes.
+The topology is source-verified in [backend.py](../backend.py), [workflow/nodes.py](../workflow/nodes.py) and [workflow/routing.py](../workflow/routing.py), including the repeated-interrupt paths added in 1F.1a checkpoint 2. `CANCEL` is an API-side checkpoint update. `route_after_check()` can return a list of selected research nodes.
 
 ```mermaid
 flowchart TD
     START --> U[understand_request]
-    U -->|nontravel without pending question| S[scope_response]
+    U -->|initial nontravel| S[scope_response]
     S --> END
-    U -->|travel or pending question| R[assess_trip_readiness]
+    U -->|accepted planning turn| R[assess_trip_readiness]
     R -->|details missing| Q[ask_trip_details interrupt]
     Q -->|REPLY| U
     R -->|ready| B[present_trip_brief interrupt]
+    U -->|unrelated details reply| Q
+    U -->|unrelated or unchanged edit| B
     B -->|EDIT| U
     B -->|BUILD| C[check_request]
     C -->|technical validation error| L[clarify_request interrupt]
@@ -91,16 +93,16 @@ flowchart TD
 ```
 
 1. `START` creates a fresh UUID-derived thread. `REPLY`, `EDIT` and `BUILD` validate the pending interrupt before `Command(resume=...)`. `CANCEL` writes the logical marker without invoking the graph.
-2. `understand_request_node` reads `TripContext` and `pending_question`. `extract_trip_turn()` supplies intent and an update. Only `TRAVEL` merges into the domain context. The node always derives a fresh `parsed_request` through `to_travel_request()` and `apply_request_policy()`.
-3. Initial `OUT_OF_SCOPE` or `UNCLEAR` goes to the deterministic `scope_response`. In a pending phase a nontravel turn preserves `TripContext`, creates a nontravel `parsed_request` with empty capabilities and reaches readiness when `pending_question` is set. `assess_trip_readiness_node` evaluates domain context and clears the old question.
-4. `ask_trip_details_node` interrupts with `{"type":"trip_details","question":...,"issues":[...]}`. On resume it accepts a nonempty string, writes `user_query`, records the question in `pending_question`, appends a `HumanMessage` and returns to understanding. With a nontravel classification during normal collection, the unchanged incomplete context causes the question to repeat. There is no separate redirect copy at this point.
-5. `present_trip_brief_node` builds the deterministic projection and interrupts with `{"type":"trip_brief","question":...,"brief":...}`. `EDIT` resumes with `{"action":"edit","message":...}` and sets `brief_decision="edit"`, the latest query, an edit hint in `pending_question` and a `HumanMessage`. `BUILD` resumes with `{"action":"build"}`, sets `brief_decision="build"` and clears the hint. The brief is rebuilt safely when the node re-executes on resume. A nontravel `EDIT` can reach readiness with the old ready context and present a new brief with empty effective capabilities. A subsequent `BUILD` then reaches `scope_response` without research.
+2. `understand_request_node` extracts intent and updates from the latest message using `TripContext` and `pending_question`. An accepted `TRAVEL` turn merges updates, derives the effective `parsed_request` through the adapter and policy, and updates `user_query` for synthesis.
+3. Initial `OUT_OF_SCOPE` or `UNCLEAR` routes to the deterministic scope reply. In a pending phase, an unrelated turn or a brief edit with no change after merging sets `repeat_pending_phase`. Routing uses the explicit `turn_source` to return directly to the applicable interrupt. The context, effective request, readiness and accepted synthesis input stay intact.
+4. `ask_trip_details_node` interrupts with `{"type":"trip_details","question":...,"issues":[...]}`. A repeated interrupt prefixes the same targeted question with a redirect. On resume the node records the latest message, the details turn source, the original question for extraction and a `HumanMessage`.
+5. `present_trip_brief_node` builds the deterministic projection and interrupts with `{"type":"trip_brief","question":...,"brief":...}`. A repeated interrupt keeps the same brief and reminds the user to build or edit. `EDIT` records the latest message, the brief turn source, an extraction hint and a `HumanMessage`. `BUILD` records the explicit build decision and clears the hint. Readiness is evaluated again when the edit changes the trip context.
 6. `route_after_brief_decision()` sends edit to understanding and build to `check_request`. Readiness alone always reaches the brief first. `check_request_node` validates execution requirements and resolves IATA for flight requests.
 7. After `BUILD`, `clarify_request_node` can interrupt for technical location clarification. Its string reply updates the relevant field in both `parsed_request` and `TripContext` and appends a `HumanMessage`. It returns directly to `check_request` and leaves `user_query` unchanged. A successful correction can trigger research without a renewed brief. This is a verified implementation gap in the approval invariant and remains tracked for 1F.2.
 8. `route_after_check()` sends nontravel or empty capabilities to scope, sends invalid executable requests to the legacy clarification node, and otherwise selects only the required branches. Itinerary-only requests can go straight to generation after the normal approval and check. `join_services_node` returns `{}` and is registered with `defer=True`.
 9. `generate_response_node` synthesizes Markdown from `parsed_request`, the latest `user_query` and available provider results. `scope_response_node` deterministically sets `final_answer` too. Either terminal path currently maps to `completed`. See [response semantics](#b12).
 
-Old checkpoint compatibility is open. The in-memory audit probes exercised the application graph's wiring with mocked providers. They establish the paths above for controlled classifications and leave live parsing and persisted checkpoint recovery unverified. [Audit evidence](DEVELOPMENT.md#c4)
+An offline probe resumed both pending phases from checkpoints generated by the pre-change graph at `d228ded` using `InMemorySaver`. Live parsing and PostgreSQL checkpoint recovery remain unverified. [Checkpoint evidence](DEVELOPMENT.md#c7)
 
 <a id="b5"></a>
 
@@ -108,7 +110,7 @@ Old checkpoint compatibility is open. The in-memory audit probes exercised the a
 
 ### Execution request and intent
 
-- `RequestIntent` has `TRAVEL="travel"`, `OUT_OF_SCOPE="out_of_scope"` and `UNCLEAR="unclear"`. `TripTurn.intent` is required. The superseded S2 parser checked `model_fields_set` and downgraded a missing `TravelRequest.intent` to `UNCLEAR` with empty capabilities. `GREETING` is a 1F.1a proposal.
+- `RequestIntent` has `TRAVEL="travel"`, `GREETING="greeting"`, `OUT_OF_SCOPE="out_of_scope"` and `UNCLEAR="unclear"`. `TripTurn.intent` is required. The superseded S2 parser checked `model_fields_set` and downgraded a missing `TravelRequest.intent` to `UNCLEAR` with empty capabilities.
 - `TravelCapability`: `FLIGHTS="flights"`, `HOTELS="hotels"`, `ITINERARY="itinerary"`, `ACTIVITIES="activities"`.
 - `TravelRequest` contains the required capability set, optional origin, destination, duration, budget amount and currency, traveler count, preferences and intent. Its default intent remains `TRAVEL`. Dates, flexibility and budget scope are absent from this execution schema. [Execution model](../pydantic_models/travel_request.py)
 - `RequestCheck`: `ready: bool`, optional `origin_iata`, `destination_iata`, `errors: list[str]` default empty.
@@ -136,7 +138,7 @@ Old checkpoint compatibility is open. The in-memory audit probes exercised the a
 
 ### Graph state
 
-`TravelState(TypedDict, total=False)` declares `messages: Annotated[list[AnyMessage], add_messages]`, `session_cancelled: bool`, `trip_context: TripContext | None`, `trip_readiness: TripReadiness | None`, `pending_question: str | None`, `user_query: str`, `parsed_request: TravelRequest | None`, `request_check: RequestCheck | None`, string fields `flight_results`, `hotel_results`, `activity_results`, `itinerary` and `final_answer`, and `brief_decision: str | None`. `START` initializes the graph state without `brief_decision`. The confirmation node sets it on resume. The reducer merges messages by LangGraph semantics and nodes own independent scalar updates. Research branches write distinct result fields. `itinerary` is a legacy state and HTTP field initialized to `""` and currently unwritten by the synthesis node. [TravelState](../workflow/state.py) · [Start state](../backend.py)
+`TravelState(TypedDict, total=False)` declares `messages: Annotated[list[AnyMessage], add_messages]`, `session_cancelled: bool`, `trip_context: TripContext | None`, `trip_readiness: TripReadiness | None`, `pending_question: str | None`, `user_query: str`, `parsed_request: TravelRequest | None`, `request_check: RequestCheck | None`, string fields `flight_results`, `hotel_results`, `activity_results`, `itinerary` and `final_answer`, `terminal_response_type: ResponseType`, and `brief_decision: str | None`. Resumed conversational interrupts supply `latest_user_message: str` and `turn_source: Literal["trip_details", "trip_brief"]`. Understanding sets `repeat_pending_phase: bool` to signal direct return to the source interrupt. `user_query` retains the last accepted planning input. `START` initializes the graph state without `brief_decision`, which the confirmation node sets on resume. The reducer merges messages by LangGraph semantics and nodes own independent scalar updates. Research branches write distinct result fields. `itinerary` is a legacy state and HTTP field initialized to `""` and currently unwritten by the synthesis node. [TravelState](../workflow/state.py) · [Start state](../backend.py)
 
 ### Readiness versus execution validity
 
@@ -181,7 +183,7 @@ The action is required. Invalid request models are rejected as HTTP 422 before g
 
 `_get_interrupt_payload(result)` supersedes `_get_interrupt_question()`. It reads the first `__interrupt__` item, extracts `.value` and wraps text as `{"type":"clarification","question":...}`. That response-side compatibility is partial because the session validator does not normalize text-valued interrupts for resume. The API expects one human interrupt at a time. `app.py` delegates already validated input, maps response fields and handles conflicts and unexpected exceptions. The historical unconditional `message.strip()` problem and redundant manual validation are covered in [the 1D.2 history](DEVELOPMENT.md#c2-6).
 
-### Current response shape (1E)
+### Baseline response shape (1E)
 
 ```json
 {
@@ -199,7 +201,7 @@ The action is required. Invalid request models are rejected as HTTP 422 before g
 }
 ```
 
-`requires_input` returns the question with a null brief and `requires_confirmation` returns the structured brief. `completed` returns `final_answer` for a scope reply or a generated result. `cancelled` returns the cancellation message. HTTP defaults the optional research fields and legacy `itinerary` to empty strings and `brief` to null. The interrupt's issue codes or location field are not exposed in the HTTP response. A 409 may return `{"success":false,"error":"This trip is waiting for a different action."}`. A Pydantic 422 uses the standard `detail` array. The HTTP output is a manually constructed `JSONResponse` with no `response_type` or typed response model. See [the 1F.1a proposal](#b12).
+`requires_input` returns the question with a null brief and `requires_confirmation` returns the structured brief. `completed` returns `final_answer` for a scope reply or a generated result. `cancelled` returns the cancellation message. HTTP defaults the optional research fields and legacy `itinerary` to empty strings and `brief` to null. The interrupt's issue codes or location field are not exposed in the HTTP response. A 409 may return `{"success":false,"error":"This trip is waiting for a different action."}`. A Pydantic 422 uses the standard `detail` array. At the 1E baseline, success used a manually constructed `JSONResponse` without `response_type` or a typed response model. See [the 1F.1a contract](#b12).
 
 <a id="b7"></a>
 
@@ -223,7 +225,7 @@ The current `Dockerfile` retains the S2 pattern. It uses `python:3.14-slim`, `/a
 
 `ChatGroq` uses `model="openai/gpt-oss-120b"`, `temperature=0` and `GROQ_API_KEY`, with the LLM passed in as a `BaseChatModel` dependency. Temperature zero improves reproducibility. The historical `understand_request(user_query, llm)` used `with_structured_output(TravelRequest, method="json_schema")`. The current `extract_trip_turn(latest_message, current_context, llm, *, pending_question=None) -> TripTurn` uses `with_structured_output(TripTurn, method="json_schema")`, sends the latest message, structured context and question as JSON alongside the system prompt, and checks the result type. Raw chat history is excluded from that prompt to limit token usage. The 1F.1a proposal reuses this single extraction call. [Parser](../llm/request_parser.py)
 
-The active prompt classifies `TRAVEL`, `OUT_OF_SCOPE` and `UNCLEAR`, including incomplete travel requests and relevant follow-up answers. It asks for new or corrected facts only, avoids guessed origins or dates, and specifies null for unspecified scalar updates. It extracts `ITINERARY` for end-to-end planning, keeps `ACTIVITIES` explicit and leaves flight/hotel expansion to deterministic policy. It supports exact dates, `YYYY-MM` or `MM`, an explicit budget scope and preference additions/removals. Nontravel leaves `TripContext` unchanged. Prompts guide behavior and require evaluation. Mixed greeting-plus-travel priority is part of the [1F.1a proposal](#b12).
+The active prompt classifies `TRAVEL`, `GREETING`, `OUT_OF_SCOPE` and `UNCLEAR`. Incomplete travel requests, relevant follow-up answers and mixed greetings with travel requests or details take the `TRAVEL` path. It asks for new or corrected facts only, avoids guessed origins or dates, and specifies null for unspecified scalar updates. It extracts `ITINERARY` for end-to-end planning, keeps `ACTIVITIES` explicit and leaves flight/hotel expansion to deterministic policy. It supports exact dates, `YYYY-MM` or `MM`, an explicit budget scope and preference additions/removals. Nontravel leaves `TripContext` unchanged. Live classification requires evaluation. [Response semantics](#b12)
 
 ### Current provider operations
 
@@ -327,19 +329,21 @@ This register preserves the conversation-derived decisions and proposals, with t
 | ADR-21 Minimal chat-first frontend | Dual panels, state-driven vanilla JS. No framework/React. | Continue single result box or introduce framework too early. Simplicity but manual UI state consistency required. | 1F.1 committed at `ddc43e0`. Acceptance and refinement pending. |
 | ADR-22 UI snapshot & uncertain requests | sessionStorage, single state, blocked marker before request. No silent replay after uncertainty. | localStorage ID only loses chat/brief, automatic retries may duplicate work. Conservative reset sacrifices recovery. | 1F.1 committed. Refresh/error scenarios need browser verification. |
 | ADR-23 Safe rendering | `textContent` for chat and brief. DOMPurify on Marked HTML. Plain-text fallback. | Raw `innerHTML` permits unsafe rendering. Sanitizer dependency and policy need testing. | 1F.1 source verified. Browser security tests pending. |
-| ADR-24 Semantic response contract | Separate `status` (lifecycle) from `response_type` (message/clarification/trip_brief/travel_result). | JS string matching brittle, status per content conflates independent dimensions. | Proposed 1F.1a. Not implemented. |
-| ADR-25 Greeting handling | Add GREETING to existing structured extraction, deterministic greeting response, TRAVEL priority for mixed input. | Second LLM/agent or all greetings treated OUT_OF_SCOPE. Additional intent requires updating routing/serializer/tests. | Proposed 1F.1a. Not implemented. |
-| ADR-26 Preserve pending context across unrelated turns | Redirect conversationally to current question/brief, no research/merge/approval. | Terminate session or lose current request. Need explicit pending phase handling. | Agreed design objective. Details collection re-asks today, and nontravel EDIT degrades the brief. |
+| ADR-24 Semantic response contract | Separate `status` (lifecycle) from `response_type` (message/clarification/trip_brief/travel_result). | JS string matching brittle, status per content conflates independent dimensions. | Implemented in 1F.1a checkpoint 1. Developer review pending. |
+| ADR-25 Greeting handling | Add GREETING to existing structured extraction, deterministic greeting response, TRAVEL priority for mixed input. | Second LLM/agent or all greetings treated OUT_OF_SCOPE. The existing nontravel path and RequestIntent serializer entry cover the new enum value. | Implemented and verified offline in 1F.1a checkpoint 3. Live classification remains open. |
+| ADR-26 Preserve pending context across unrelated turns | Redirect conversationally to current question/brief, no research/merge/approval. | Terminate session or lose current request. Need explicit pending phase handling. | Implemented and approved in 1F.1a checkpoint 2. |
 | ADR-27 Evaluation-first | Deterministic assertions and regression dataset, semantic judge only for subjective dimensions. | Judge everything with LLM or manual demos only. Test doubles cannot guarantee actual provider reliability. | Agreed, partial implementation. |
 | ADR-28 Production stack restraint | Add async, reliability, auth, caching, monitoring, evaluation, CI/CD incrementally as needed. | Microservices, supervisor, additional vendors for CV. | Agreed. Roadmap not completed. |
 
 <a id="b12"></a>
 
-## B12. Immediate proposed architecture: response semantics (1F.1a)
+## B12. Response semantics (1F.1a)
 
-**Proposed for 1F.1a. Implementation and contract approval are pending.** In S6 a standalone `Hi` ended in a scope reply. The UI showed a false plan-ready bubble, placed the scope text in the trip panel, enabled Copy/PDF and disabled the composer. The offline audit reproduced the chain from a mocked nontravel classification through the API handler and exercised the committed JavaScript with DOM stubs. Live classification of `Hi` remains unverified. The current contract conflates terminal lifecycle with content type and has no distinct greeting intent.
+**1F.1a — Conversational Response Handling** is the corrective sub-increment of **1F.1** within milestone **1F**. Checkpoint 1 implements the typed success contract and UI transitions. The terminal graph nodes set the semantic type for conversational and generated answers. The backend maps interrupts and cancellation, and FastAPI validates the success payload. Checkpoint 2 preserves pending questions and briefs across unrelated turns. Checkpoint 3 adds `GREETING` to the existing structured extractor and uses a deterministic reply for standalone greetings. See the [roadmap hierarchy](DEVELOPMENT.md#c3) and [checkpoint evidence](DEVELOPMENT.md#c7).
 
-Proposed enum:
+In S6 a standalone `Hi` ended in a scope reply. The UI showed a false plan-ready bubble, placed the scope text in the trip panel, enabled Copy/PDF and disabled the composer. The offline audit reproduced the chain from a mocked nontravel classification through the API handler and exercised the committed JavaScript with DOM stubs. The baseline contract used lifecycle status for both results and conversational replies. The developer later confirmed correct greeting rendering after a hard refresh. Broader live classification remains open. [Browser check](DEVELOPMENT.md#c7)
+
+Response type:
 
 ```python
 class ResponseType(StrEnum):
@@ -349,7 +353,7 @@ class ResponseType(StrEnum):
     TRAVEL_RESULT = "travel_result"
 ```
 
-| Case | Session status | Proposed response type | UI behavior |
+| Case | Session status | Response type | UI behavior |
 |---|---|---|---|
 | Initial greeting | completed | message | append actual answer in chat, no travel panel/export. Remain ready to submit |
 | Initial out-of-scope/unclear | completed | message | friendly redirect/clarification of supported scope. Remain ready |
@@ -358,10 +362,10 @@ class ResponseType(StrEnum):
 | Explicit BUILD successful | completed | travel_result | actual generated result in trip panel, export enabled |
 | Cancel | cancelled | message | cancellation semantics. Reset behavior as designed |
 
-Example initial greeting reply: `{"success":true,"status":"completed","response_type":"message","thread_id":"trip_...","answer":"Hi! I'd love to help you plan your next trip. Do you have a destination in mind?","brief":null}`. A greeting-only execution can end without an interrupt. UI history remains, but next planning message uses START with fresh thread. Must reconcile `applyTravelResponse`'s thread ID mismatch check and completed disabled controls with this design. Clear active thread reference or otherwise distinguish terminal conversational messages from active thread while preserving history. Exact contract/model/state assignment still needs design and source inspection. Use an explicit semantic field so behavior stays independent of response copy and nonempty output strings.
+A terminal chat-only response keeps the chat history and clears the active thread reference. The next planning message uses START with a fresh thread. Thread ID matching is checked for resume and cancellation requests. Older completed UI snapshots without a semantic type retain chat history with export disabled because their type cannot be determined. The UI uses the explicit semantic field to choose what to display and export.
 
-The intent proposal introduces `RequestIntent.GREETING="greeting"` and updates the `extract_trip_turn` prompt. Greetings alone (Hi, Hello there, Good morning) are GREETING, "Hi, plan a trip to London" TRAVEL, "I want to go somewhere" TRAVEL, clearly unrelated coding questions OUT_OF_SCOPE, genuinely ambiguous "What?" UNCLEAR. Deterministic reply for greetings and scope redirection, no new LLM call or agent. A broader SMALL_TALK intent was deferred until need is established.
+The `extract_trip_turn` prompt instructs the model to classify standalone greetings such as "Hi", "Hello there" and "Good morning" as `GREETING`, and both "Hi, plan a trip to London" and "I want to go somewhere" as `TRAVEL`. A standalone "What?" without a clear travel reference is `UNCLEAR`, and unrelated coding questions are `OUT_OF_SCOPE`. A greeting classified as `GREETING` takes the existing deterministic conversational path. During a pending phase it returns the existing question or brief through the same-phase routing. The broader SMALL_TALK intent remains deferred.
 
-For pending collection, the proposed UX redirects to the current question and preserves the thread and context. For pending confirmation, it preserves the reviewed brief, effective capabilities and explicit approval requirement. The audit reproduced two distinct current paths. An unrelated details `REPLY` repeated the question. An unrelated `EDIT` kept domain context but produced a brief with no effective capabilities, and `BUILD` then completed with a scope reply. The exact pending response type and what it carries, how routing retains effective request state, and how refresh/new-thread behavior should work remain design decisions. A conversational message can occur while a workflow remains pending. [Regression matrix](DEVELOPMENT.md#c7)
+For pending collection, an unrelated `REPLY` returns the same targeted question and thread as `clarification`, with a short redirect in `answer`. In confirmation, an unrelated or unchanged `EDIT` returns the same structured brief and thread as `trip_brief`. The effective request and last accepted synthesis input are retained for the next explicit `BUILD`. The baseline audit had reproduced a nontravel edit that kept domain context but emptied the effective capabilities, causing the next build to return a scope reply. [Regression matrix](DEVELOPMENT.md#c7)
 
-Expected files to inspect/change: `pydantic_models/travel_request.py`, proposed `pydantic_models/api_response.py`, `llm/request_parser.py`, `workflow/nodes.py`, `workflow/routing.py`, `workflow/state.py`, `backend.py`, `app.py`, `static/script.js`, relevant tests. The semantic fix targets request understanding, graph/API outputs, JavaScript state and regression tests. Revisit serializer allowlist if adding typed enum to persisted state. Keep actual response generation semantics explicit at the node/backend boundary. No new agent. See the [next task and regression matrix](DEVELOPMENT.md#c7).
+The 1F.1a work covers request understanding, graph/API outputs, JavaScript state and regression tests. The serializer allowlist now includes the terminal `ResponseType` enum. See the [1F.1a implementation tasks and regression matrix](DEVELOPMENT.md#c7).
